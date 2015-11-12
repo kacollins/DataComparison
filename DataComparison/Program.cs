@@ -2,80 +2,73 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
 using System.Data.SqlClient;
 using System.Data;
+using System.IO;
 
 namespace DataComparison
 {
     class Program
     {
+        const char backSlash = '\\';
+
         static void Main(string[] args)
         {
-            Console.WriteLine("Press any key to retrieve database table contents:");
+            Console.WriteLine("Press enter to compare database table contents:");
+            Console.Read();
 
-            Console.ReadKey();
+            IEnumerable<Table> tablesToCompare = GetTablesToCompare();
 
-            Console.WriteLine("\nGetting SQL Connection Object for Database1...");
+            foreach (Table table in tablesToCompare)
+            {
+                string queryText = $"SELECT * FROM [{table.SchemaName}].[{table.TableName}]";
+                DataTable DT1 = GetDataTable(GetDatabase1Connection(), queryText);
+                DataTable DT2 = GetDataTable(GetDatabase2Connection(), queryText);
+                string results = CompareDatatables(DT1, DT2, table.SchemaName, table.TableName);
+            
+                Console.WriteLine(results);
+                WriteToFile(results);
 
-            Console.WriteLine(GetTableContents(GetDatabase1Connection(), GetSQLQueryText()));
-            Console.WriteLine(GetTableContents(GetDatabase2Connection(), GetSQLQueryText()));
+                Console.WriteLine("Press enter to continue:");
+                Console.Read();
+            }
 
-            Console.WriteLine(CompareDatatables(GetDataTable(GetDatabase1Connection(), GetSQLQueryText()), GetDataTable(GetDatabase2Connection(), GetSQLQueryText())));
+            Console.WriteLine("Press enter to exit:");
+            Console.Read();
+        }
 
-            Console.WriteLine("Press any key to continue:");
+        private static void WriteToFile(string results)
+        {
+            string filePath = $"{Directory.GetCurrentDirectory()}{backSlash}results.txt";
 
-            Console.ReadKey() ;
+            if (File.Exists(filePath))
+            {
+                File.Delete(filePath);
+            }
+
+            using (StreamWriter sw = File.CreateText(filePath))
+            {
+                sw.Write(results);
+            }
+        }
+
+        private static IEnumerable<Table> GetTablesToCompare()
+        {
+            //TODO: Call SP to get list of tables to compare
+            Table testingTable = new Table() { SchemaName = "dbo", TableName = "DatabaseLog" };
+            return new List<Table>() { testingTable };
         }
 
         private static SqlConnection GetDatabase1Connection()
         {
-            return new SqlConnection("Server=(localdb)\\MSSQLLocalDB;Integrated Security=false;AttachDbFilename=C:\\Git Repos\\TestingDatabase\\Databases\\Database1.mdf;User Id=Adam;Password=123456");
+            //TODO: Read from a file
+            return new SqlConnection("Data Source=.\\SQLEXPRESS;Initial Catalog=AdventureWorks2012;Integrated Security=True;MultipleActiveResultSets=True");
         }
 
         private static SqlConnection GetDatabase2Connection()
         {
-            return new SqlConnection("Server=(localdb)\\MSSQLLocalDB;Integrated Security=false;AttachDbFilename=C:\\Git Repos\\TestingDatabase\\Databases\\Database2.mdf;User Id=Adam;Password=123456");
-        }
-
-        private static string GetSQLQueryText()
-        {
-            return "SELECT * FROM ALookup";
-        }
-
-        private static string GetTableContents(SqlConnection Conn, string SQL)
-        {
-            DataTable DT = GetDataTable(Conn, SQL);
-
-            if (DT != null)
-            {
-                StringBuilder SB = new StringBuilder();
-
-                IEnumerable<DataColumn> Columns = GetColumns(DT);
-
-                foreach (var Col in Columns)
-                {
-                    SB.Append(Col.ColumnName + "\t");
-                }
-
-                SB.AppendLine();
-
-                foreach (DataRow Row in DT.Rows)
-                {
-                    foreach (var Col in Columns)
-                    {
-                        SB.Append(Row.ItemArray[Col.Ordinal] + "\t");
-                    }
-
-                    SB.AppendLine();
-                }
-
-                return SB.ToString();
-            }
-            else
-            {
-                return string.Empty;
-            }
+            //TODO: Read from a file
+            return new SqlConnection("Data Source=.\\SQLEXPRESS;Initial Catalog=AdventureWorks2;Integrated Security=True;MultipleActiveResultSets=True");
         }
 
         private static DataTable GetDataTable(SqlConnection Conn, string SQL)
@@ -89,8 +82,9 @@ namespace DataComparison
                 SDA.Fill(DT);
                 Conn.Close();
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Console.WriteLine(ex.Message);
                 throw;
             }
             finally
@@ -101,106 +95,124 @@ namespace DataComparison
             return DT;
         }
 
+        private static List<string> GetColumnsToIgnore()
+        {
+            //TODO: Read from a file
+            return new List<string>() { "UserCreated", "DateCreated", "UserModified", "DateModified" };
+        }
+
         private static IEnumerable<DataColumn> GetColumns(DataTable DT)
         {
-            List<DataColumn> Columns = new List<DataColumn>();
-
-            foreach (DataColumn Col in DT.Columns)
-            {
-                Columns.Add(Col);
-            }
-
-            return Columns;
+            List<string> columnsToIgnore = GetColumnsToIgnore();
+            return DT.Columns.Cast<DataColumn>().Where(dc => !columnsToIgnore.Contains(dc.ColumnName)).ToList();
         }
 
         private static IEnumerable<DataRow> GetRows(DataTable DT)
         {
-            List<DataRow> Rows = new List<DataRow>();
-
-            foreach (DataRow Row in DT.Rows)
-            {
-                Rows.Add(Row);
-            }
+            List<DataRow> Rows = DT.Rows.Cast<DataRow>().ToList();
 
             return Rows.OrderBy(x => x.ItemArray[0]); //assuming the first column is the ID
         }
 
-        private static string CompareDatatables(DataTable DT1, DataTable DT2)
+        private static string CompareDatatables(DataTable DT1, DataTable DT2, string schemaName, string tableName)
         {
-            IEnumerable<DataColumn> DT1Columns = GetColumns(DT1);
-            IEnumerable<DataColumn> DT2Columns = GetColumns(DT2);
+            List<DataColumn> DT1Columns = GetColumns(DT1).ToList();
+            List<DataColumn> DT2Columns = GetColumns(DT2).ToList();
 
-            IEnumerable<DataRow> DT1Rows = GetRows(DT1);
-            IEnumerable<DataRow> DT2Rows = GetRows(DT2);
+            List<DataRow> DT1Rows = GetRows(DT1).ToList();
+            List<DataRow> DT2Rows = GetRows(DT2).ToList();
 
-            StringBuilder SB = new StringBuilder();
+            string validationErrors = ValidateColumns(schemaName, tableName, DT1Columns, DT2Columns);
 
-            if (DT1Columns.Count() != DT2Columns.Count())
+            if (validationErrors.Length == 0)
             {
-                SB.AppendLine("These tables have a different number of columns!");
-            }
+                StringBuilder results = new StringBuilder();
 
-            if
-                (
-                    DT1Columns.Any(x => !DT2Columns.Any(y => y.ColumnName == x.ColumnName))
-                    ||
-                    DT2Columns.Any(x => !DT1Columns.Any(y => y.ColumnName == x.ColumnName))
-                )
-            {
-                SB.AppendLine("These tables have some differently named columns!");
-            }
+                results.AppendLine(GetDifferencesInIDs(schemaName, tableName, DT1Rows, DT2Rows));
+                results.AppendLine(GetDifferencesForSameIDs(schemaName, tableName, DT1Columns, DT1Rows, DT2Rows));
 
-            if
-                (
-                    DT1Columns.Any(x => DT2Columns.Any(y => y.ColumnName == x.ColumnName && y.Ordinal != x.Ordinal))
-                    ||
-                    DT2Columns.Any(x => DT1Columns.Any(y => y.ColumnName == x.ColumnName && y.Ordinal != x.Ordinal))
-                )
-            {
-                SB.AppendLine("These tables have some of the same columns but in different places!");
+                return results.ToString();
             }
+            else
+            {
+                return validationErrors;
+            }
+        }
 
-            if
-                (
-                    DT1Columns.Any(x => DT2Columns.Any(y => y.ColumnName == x.ColumnName && y.DataType != x.DataType))
-                    ||
-                    DT2Columns.Any(x => DT1Columns.Any(y => y.ColumnName == x.ColumnName && y.DataType != x.DataType))
-                )
-            {
-                SB.AppendLine("These tables have some of the same columns but with different data types!");
-            }
-
-            if (DT1Rows.Count() != DT2Rows.Count())
-            {
-                SB.AppendLine("These tables have a different number of rows!");
-            }
+        private static string GetDifferencesForSameIDs(string schemaName, string tableName, List<DataColumn> DT1Columns,
+                                                        List<DataRow> DT1Rows, List<DataRow> DT2Rows)
+        {
+            StringBuilder results = new StringBuilder();
 
             //this assumes that the first column is the int ID column
             foreach (var RowInDT1 in DT1Rows.Where(x => DT2Rows.Any(y => (int)x.ItemArray[0] == (int)y.ItemArray[0])))
             {
-                foreach (var Col in DT1Columns)
+                foreach (var Col in DT1Columns.Where(Col => !DT2Rows.Any
+                    (x => (int)x.ItemArray[0] == (int)RowInDT1.ItemArray[0]
+                          && x.ItemArray[Col.Ordinal].Equals(RowInDT1.ItemArray[Col.Ordinal])
+                    )))
                 {
-                    if
-                        (!DT2Rows.Any
-                                    (x =>
-                                            (int)x.ItemArray[0] == (int)RowInDT1.ItemArray[0]
-                                            &&
-                                            x.ItemArray[Col.Ordinal].Equals(RowInDT1.ItemArray[Col.Ordinal])
-                                    )
-                        )
-                    {
+                    string columnName = Col.ColumnName;
+                    int ID = (int)RowInDT1.ItemArray[0];
+                    object value1 = RowInDT1.ItemArray[Col.Ordinal];
+                    object value2 =
+                        DT2Rows.First(x => (int)x.ItemArray[0] == (int)RowInDT1.ItemArray[0]).ItemArray[Col.Ordinal];
 
-                        SB.AppendLine
-                                        (string.Format
-                                                        ("Column {0} for ID {1} is different: {2} vs {3}"
-                                                            ,Col.ColumnName
-                                                            , (int)RowInDT1.ItemArray[0]
-                                                            ,RowInDT1.ItemArray[Col.Ordinal]
-                                                            ,DT2Rows.First(x => (int)x.ItemArray[0] == (int)RowInDT1.ItemArray[0]).ItemArray[Col.Ordinal]
-                                                        )
-                                        );
-                    }
+                    results.AppendLine(
+                        $"{schemaName}.{tableName} - Column {columnName} for ID {ID} is different: {value1} vs {value2}");
                 }
+            }
+
+            return results.ToString();
+        }
+
+        private static string GetDifferencesInIDs(string schemaName, string tableName, List<DataRow> DT1Rows, List<DataRow> DT2Rows)
+        {
+            StringBuilder results = new StringBuilder();
+
+            foreach (var RowInDT1 in DT1Rows.Where(x => DT2Rows.All(y => (int)x.ItemArray[0] != (int)y.ItemArray[0])))
+            {
+                results.AppendLine(
+                    $"{schemaName}.{tableName} - ID {(int)RowInDT1.ItemArray[0]} is in database 1 but not in database 2.");
+            }
+
+            foreach (var RowInDT2 in DT2Rows.Where(x => DT1Rows.All(y => (int)x.ItemArray[0] != (int)y.ItemArray[0])))
+            {
+                results.AppendLine(
+                    $"{schemaName}.{tableName} - ID {(int)RowInDT2.ItemArray[0]} is in database 1 but not in database 2.");
+            }
+
+            return results.ToString();
+        }
+
+        private static string ValidateColumns(string schemaName, string tableName, List<DataColumn> DT1Columns, List<DataColumn> DT2Columns)
+        {
+            StringBuilder SB = new StringBuilder();
+
+            //TODO: Make sure primary key is an int
+
+            foreach (DataColumn dc in DT1Columns.Where(x => DT2Columns.All(y => y.ColumnName != x.ColumnName)))
+            {
+                SB.AppendLine($"{schemaName}.{tableName} - {dc.ColumnName} column in database 1 but not in database 2!");
+            }
+
+            foreach (DataColumn dc in DT2Columns.Where(x => DT1Columns.All(y => y.ColumnName != x.ColumnName)))
+            {
+                SB.AppendLine($"{schemaName}.{tableName} - {dc.ColumnName} column in database 2 but not in database 1!");
+            }
+
+            if (DT1Columns.Any(x => DT2Columns.Any(y => y.ColumnName == x.ColumnName && y.Ordinal != x.Ordinal))
+                || DT2Columns.Any(x => DT1Columns.Any(y => y.ColumnName == x.ColumnName && y.Ordinal != x.Ordinal)))
+            {
+                //TODO: List columns
+                SB.AppendLine($"{schemaName}.{tableName} - Column(s) in different places!");
+            }
+
+            if (DT1Columns.Any(x => DT2Columns.Any(y => y.ColumnName == x.ColumnName && y.DataType != x.DataType))
+                || DT2Columns.Any(x => DT1Columns.Any(y => y.ColumnName == x.ColumnName && y.DataType != x.DataType)))
+            {
+                //TODO: List columns
+                SB.AppendLine($"{schemaName}.{tableName} - Column(s) with different data types!");
             }
 
             return SB.ToString();
