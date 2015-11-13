@@ -10,36 +10,155 @@ namespace DataComparison
 {
     class Program
     {
-        const char backSlash = '\\';
-
         static void Main(string[] args)
         {
-            Console.WriteLine("Press enter to compare database table contents:");
-            Console.Read();
+            List<Table> tablesToCompare = GetTablesToCompare();
+            List<DatabasePair> databasesToCompare = GetDatabasesToCompare();
 
-            IEnumerable<Table> tablesToCompare = GetTablesToCompare();
-
-            foreach (Table table in tablesToCompare)
+            foreach (DatabasePair databasePair in databasesToCompare)
             {
-                string queryText = $"SELECT * FROM [{table.SchemaName}].[{table.TableName}]";
-                DataTable DT1 = GetDataTable(GetDatabase1Connection(), queryText);
-                DataTable DT2 = GetDataTable(GetDatabase2Connection(), queryText);
-                string results = CompareDatatables(DT1, DT2, table.SchemaName, table.TableName);
-            
-                Console.WriteLine(results);
-                WriteToFile(results);
-
-                Console.WriteLine("Press enter to continue:");
-                Console.Read();
+                CompareDatabases(tablesToCompare, databasePair);
             }
 
-            Console.WriteLine("Press enter to exit:");
+            Console.WriteLine("Done! Press enter to exit:");
             Console.Read();
         }
 
-        private static void WriteToFile(string results)
+        #region Methods
+
+        private static List<Table> GetTablesToCompare()
         {
-            string filePath = $"{Directory.GetCurrentDirectory()}{backSlash}results.txt";
+            List<string> lines = GetFileLines("TablesToCompare.supersecret");
+
+            List<Table> tablesToCompare = new List<Table>();
+
+            foreach (string[] lineParts in lines.Select(line => line.Split('.')))
+            {
+                if (lineParts.Length == Enum.GetValues(typeof(TablePart)).Length)
+                {
+                    tablesToCompare.Add(new Table(lineParts[(int)TablePart.SchemaName],
+                                                lineParts[(int)TablePart.TableName]));
+                }
+                else
+                {
+                    Console.WriteLine("Error: Invalid schema/table name in TablesToCompare file.");
+                }
+            }
+
+            //Call SP in LINQPad
+            //List<Table> tablesToCompare = usp_GetLookups().Tables[0].AsEnumerable()
+            //                                        .Select(dr => new Table(dr["SchemaName"].ToString(),
+            //                                                                dr["TableName"].ToString()))
+            //                                        .ToList();
+
+            return tablesToCompare;
+        }
+
+        private static List<DatabasePair> GetDatabasesToCompare()
+        {
+            List<DatabasePair> databasePairs = new List<DatabasePair>();
+            List<string> lines = GetFileLines("ConnectionStrings.supersecret");
+
+            foreach (string[] lineParts in lines.Select(line => line.Split(',')))
+            {
+                if (lineParts.Length == Enum.GetValues(typeof(DatabasePairPart)).Length)
+                {
+                    databasePairs.Add(new DatabasePair(new Database(lineParts[(int)DatabasePairPart.FriendlyName1]
+                                                                    , lineParts[(int)DatabasePairPart.ServerName1]
+                                                                    , lineParts[(int)DatabasePairPart.DatabaseName1])
+                                                    , new Database(lineParts[(int)DatabasePairPart.FriendlyName2]
+                                                                    , lineParts[(int)DatabasePairPart.ServerName2]
+                                                                    , lineParts[(int)DatabasePairPart.DatabaseName2])));
+                }
+                else
+                {
+                    Console.WriteLine("Error: Invalid database pair in ConnectionStrings file.");
+                }
+            }
+
+            return databasePairs;
+        }
+
+        private static List<string> GetFileLines(string fileName)
+        {
+            DirectoryInfo directoryInfo = new DirectoryInfo(CurrentDirectory);
+            FileInfo file = directoryInfo.GetFiles(fileName).FirstOrDefault();
+
+            if (file == null)
+            {
+                return new List<string>();
+            }
+            else
+            {
+                List<string> lines = File.ReadAllLines(file.FullName).Where(x => !string.IsNullOrWhiteSpace(x)).ToList();
+                return lines;
+            }
+        }
+
+        private static void CompareDatabases(List<Table> tablesToCompare, DatabasePair databasePair)
+        {
+            List<string> results = new List<string>();
+
+            SqlConnection connection1 = GetDatabaseConnection(databasePair.Database1);
+            SqlConnection connection2 = GetDatabaseConnection(databasePair.Database2);
+
+            foreach (Table table in tablesToCompare)
+            {
+                string result = CompareTable(table, connection1, connection2,
+                                            databasePair.Database1.FriendlyName,
+                                            databasePair.Database2.FriendlyName);
+
+                if (!string.IsNullOrEmpty(result))
+                {
+                    results.Add(result);
+                }
+            }
+
+            if (results.Any())
+            {
+                string filename = $"{DateTime.Today.ToString("yyyyMMdd")}_{databasePair.Database1.FriendlyName}_{databasePair.Database2.FriendlyName}";
+                WriteToFile(filename, results.Aggregate((current, next) => current + Environment.NewLine + next));
+            }
+        }
+
+        private static string CompareTable(Table table, SqlConnection connection1, SqlConnection connection2,
+                                            string friendlyName1, string friendlyName2)
+        {
+            string queryText = $"SELECT * FROM [{table.SchemaName}].[{table.TableName}]";
+            string results = string.Empty;
+            DataTable DT1 = null;
+            DataTable DT2 = null;
+
+            try
+            {
+                DT1 = GetDataTable(connection1, queryText);
+            }
+            catch (Exception ex)
+            {
+                results = $"Error for {friendlyName1}: {ex.Message}";
+            }
+
+            try
+            {
+                DT2 = GetDataTable(connection2, queryText);
+            }
+            catch (Exception ex)
+            {
+                results = $"Error for {friendlyName2}: {ex.Message}";
+            }
+
+            if (DT1 != null && DT2 != null)
+            {
+                results = CompareDatatables(DT1, DT2, table.SchemaName, table.TableName, friendlyName1, friendlyName2).Trim();
+            }
+
+            return results;
+        }
+
+        private static void WriteToFile(string fileName, string fileContents)
+        {
+            const char backSlash = '\\';
+            string filePath = $"{CurrentDirectory}{backSlash}Results{backSlash}{fileName}.txt";
 
             if (File.Exists(filePath))
             {
@@ -48,27 +167,17 @@ namespace DataComparison
 
             using (StreamWriter sw = File.CreateText(filePath))
             {
-                sw.Write(results);
+                sw.Write(fileContents);
             }
+
+            Console.WriteLine($"Wrote file to {filePath}");
         }
 
-        private static IEnumerable<Table> GetTablesToCompare()
+        private static SqlConnection GetDatabaseConnection(Database db)
         {
-            //TODO: Call SP to get list of tables to compare
-            Table testingTable = new Table() { SchemaName = "dbo", TableName = "DatabaseLog" };
-            return new List<Table>() { testingTable };
-        }
+            string connString = $"Data Source={db.ServerName};Initial Catalog={db.DatabaseName};Integrated Security=True;MultipleActiveResultSets=True";
 
-        private static SqlConnection GetDatabase1Connection()
-        {
-            //TODO: Read from a file
-            return new SqlConnection("Data Source=.\\SQLEXPRESS;Initial Catalog=AdventureWorks2012;Integrated Security=True;MultipleActiveResultSets=True");
-        }
-
-        private static SqlConnection GetDatabase2Connection()
-        {
-            //TODO: Read from a file
-            return new SqlConnection("Data Source=.\\SQLEXPRESS;Initial Catalog=AdventureWorks2;Integrated Security=True;MultipleActiveResultSets=True");
+            return new SqlConnection(connString);
         }
 
         private static DataTable GetDataTable(SqlConnection Conn, string SQL)
@@ -84,8 +193,7 @@ namespace DataComparison
             }
             catch (Exception ex)
             {
-                Console.WriteLine(ex.Message);
-                throw;
+                throw ex;
             }
             finally
             {
@@ -97,24 +205,26 @@ namespace DataComparison
 
         private static List<string> GetColumnsToIgnore()
         {
-            //TODO: Read from a file
+            //TODO: Read from file?
             return new List<string>() { "UserCreated", "DateCreated", "UserModified", "DateModified" };
         }
 
-        private static IEnumerable<DataColumn> GetColumns(DataTable DT)
+        private static List<DataColumn> GetColumns(DataTable DT)
         {
             List<string> columnsToIgnore = GetColumnsToIgnore();
             return DT.Columns.Cast<DataColumn>().Where(dc => !columnsToIgnore.Contains(dc.ColumnName)).ToList();
         }
 
-        private static IEnumerable<DataRow> GetRows(DataTable DT)
+        private static List<DataRow> GetRows(DataTable DT)
         {
             List<DataRow> Rows = DT.Rows.Cast<DataRow>().ToList();
 
-            return Rows.OrderBy(x => x.ItemArray[0]); //assuming the first column is the ID
+            return Rows.OrderBy(x => x.ItemArray[0]).ToList(); //assuming the first column is the ID
         }
 
-        private static string CompareDatatables(DataTable DT1, DataTable DT2, string schemaName, string tableName)
+        private static string CompareDatatables(DataTable DT1, DataTable DT2,
+                                                string schemaName, string tableName,
+                                                string friendlyName1, string friendlyName2)
         {
             List<DataColumn> DT1Columns = GetColumns(DT1).ToList();
             List<DataColumn> DT2Columns = GetColumns(DT2).ToList();
@@ -122,14 +232,14 @@ namespace DataComparison
             List<DataRow> DT1Rows = GetRows(DT1).ToList();
             List<DataRow> DT2Rows = GetRows(DT2).ToList();
 
-            string validationErrors = ValidateColumns(schemaName, tableName, DT1Columns, DT2Columns);
+            string validationErrors = GetValidationErrors(schemaName, tableName, DT1Columns, DT2Columns, friendlyName1, friendlyName2);
 
-            if (validationErrors.Length == 0)
+            if (string.IsNullOrWhiteSpace(validationErrors))
             {
                 StringBuilder results = new StringBuilder();
 
-                results.AppendLine(GetDifferencesInIDs(schemaName, tableName, DT1Rows, DT2Rows));
-                results.AppendLine(GetDifferencesForSameIDs(schemaName, tableName, DT1Columns, DT1Rows, DT2Rows));
+                results.Append(GetDifferencesInIDs(schemaName, tableName, DT1Rows, DT2Rows, friendlyName1, friendlyName2));
+                results.Append(GetDifferencesForSameIDs(schemaName, tableName, DT1Columns, DT1Rows, DT2Rows, friendlyName1, friendlyName2));
 
                 return results.ToString();
             }
@@ -139,10 +249,31 @@ namespace DataComparison
             }
         }
 
-        private static string GetDifferencesForSameIDs(string schemaName, string tableName, List<DataColumn> DT1Columns,
-                                                        List<DataRow> DT1Rows, List<DataRow> DT2Rows)
+        private static string GetDifferencesInIDs(string schemaName, string tableName,
+                                                    List<DataRow> DT1Rows, List<DataRow> DT2Rows,
+                                                    string friendlyName1, string friendlyName2)
         {
             StringBuilder results = new StringBuilder();
+
+            foreach (var RowInDT1 in DT1Rows.Where(x => DT2Rows.All(y => (int)x.ItemArray[0] != (int)y.ItemArray[0])))
+            {
+                results.AppendLine($"{schemaName}.{tableName}: ID = {(int)RowInDT1.ItemArray[0]} is in {friendlyName1} but not in {friendlyName2}.");
+            }
+
+            foreach (var RowInDT2 in DT2Rows.Where(x => DT1Rows.All(y => (int)x.ItemArray[0] != (int)y.ItemArray[0])))
+            {
+                results.AppendLine($"{schemaName}.{tableName}: ID = {(int)RowInDT2.ItemArray[0]} is in {friendlyName2} but not in {friendlyName1}.");
+            }
+
+            return results.ToString();
+        }
+
+        private static string GetDifferencesForSameIDs(string schemaName, string tableName, List<DataColumn> DT1Columns,
+                                                        List<DataRow> DT1Rows, List<DataRow> DT2Rows,
+                                                        string friendlyName1, string friendlyName2)
+        {
+            StringBuilder results = new StringBuilder();
+            const char quote = '\"';
 
             //this assumes that the first column is the int ID column
             foreach (var RowInDT1 in DT1Rows.Where(x => DT2Rows.Any(y => (int)x.ItemArray[0] == (int)y.ItemArray[0])))
@@ -152,70 +283,125 @@ namespace DataComparison
                           && x.ItemArray[Col.Ordinal].Equals(RowInDT1.ItemArray[Col.Ordinal])
                     )))
                 {
-                    string columnName = Col.ColumnName;
+                    string column = Col.ColumnName;
                     int ID = (int)RowInDT1.ItemArray[0];
                     object value1 = RowInDT1.ItemArray[Col.Ordinal];
-                    object value2 =
-                        DT2Rows.First(x => (int)x.ItemArray[0] == (int)RowInDT1.ItemArray[0]).ItemArray[Col.Ordinal];
+                    object value2 = DT2Rows.First(x => (int)x.ItemArray[0] == (int)RowInDT1.ItemArray[0]).ItemArray[Col.Ordinal];
 
-                    results.AppendLine(
-                        $"{schemaName}.{tableName} - Column {columnName} for ID {ID} is different: {value1} vs {value2}");
+                    results.AppendLine($"{schemaName}.{tableName}: {column} for ID = {ID} is {quote}{value1}{quote} in {friendlyName1} but {quote}{value2}{quote} in {friendlyName2}");
                 }
             }
 
             return results.ToString();
         }
 
-        private static string GetDifferencesInIDs(string schemaName, string tableName, List<DataRow> DT1Rows, List<DataRow> DT2Rows)
+        private static string GetValidationErrors(string schemaName, string tableName,
+                                                    List<DataColumn> DT1Columns, List<DataColumn> DT2Columns,
+                                                    string friendlyName1, string friendlyName2)
         {
             StringBuilder results = new StringBuilder();
-
-            foreach (var RowInDT1 in DT1Rows.Where(x => DT2Rows.All(y => (int)x.ItemArray[0] != (int)y.ItemArray[0])))
-            {
-                results.AppendLine(
-                    $"{schemaName}.{tableName} - ID {(int)RowInDT1.ItemArray[0]} is in database 1 but not in database 2.");
-            }
-
-            foreach (var RowInDT2 in DT2Rows.Where(x => DT1Rows.All(y => (int)x.ItemArray[0] != (int)y.ItemArray[0])))
-            {
-                results.AppendLine(
-                    $"{schemaName}.{tableName} - ID {(int)RowInDT2.ItemArray[0]} is in database 1 but not in database 2.");
-            }
-
-            return results.ToString();
-        }
-
-        private static string ValidateColumns(string schemaName, string tableName, List<DataColumn> DT1Columns, List<DataColumn> DT2Columns)
-        {
-            StringBuilder SB = new StringBuilder();
 
             //TODO: Make sure primary key is an int
 
             foreach (DataColumn dc in DT1Columns.Where(x => DT2Columns.All(y => y.ColumnName != x.ColumnName)))
             {
-                SB.AppendLine($"{schemaName}.{tableName} - {dc.ColumnName} column in database 1 but not in database 2!");
+                results.AppendLine($"{schemaName}.{tableName} not compared: {dc.ColumnName} column is in {friendlyName1} but not in {friendlyName2}.");
             }
 
             foreach (DataColumn dc in DT2Columns.Where(x => DT1Columns.All(y => y.ColumnName != x.ColumnName)))
             {
-                SB.AppendLine($"{schemaName}.{tableName} - {dc.ColumnName} column in database 2 but not in database 1!");
+                results.AppendLine($"{schemaName}.{tableName} not compared: {dc.ColumnName} column in {friendlyName2} but not in {friendlyName1}!");
             }
 
-            if (DT1Columns.Any(x => DT2Columns.Any(y => y.ColumnName == x.ColumnName && y.Ordinal != x.Ordinal))
-                || DT2Columns.Any(x => DT1Columns.Any(y => y.ColumnName == x.ColumnName && y.Ordinal != x.Ordinal)))
+            List<string> differentOrdinals = DT1Columns.Where(x => DT2Columns.Any(y => y.ColumnName == x.ColumnName && y.Ordinal != x.Ordinal))
+                                                        .Select(x => x.ColumnName)
+                                                        .ToList();
+
+            if (differentOrdinals.Any())
             {
-                //TODO: List columns
-                SB.AppendLine($"{schemaName}.{tableName} - Column(s) in different places!");
+                string columnsWithDifferentOrdinals = differentOrdinals.Aggregate((current, next) => current + ", " + next);
+                results.AppendLine($"{schemaName}.{tableName} not compared: Column(s) with different ordinals: {columnsWithDifferentOrdinals}");
             }
 
-            if (DT1Columns.Any(x => DT2Columns.Any(y => y.ColumnName == x.ColumnName && y.DataType != x.DataType))
-                || DT2Columns.Any(x => DT1Columns.Any(y => y.ColumnName == x.ColumnName && y.DataType != x.DataType)))
+            List<string> differentDataTypes = DT1Columns.Where(x => DT2Columns.Any(y => y.ColumnName == x.ColumnName && y.DataType != x.DataType))
+                                                        .Select(x => x.ColumnName)
+                                                        .ToList();
+
+            if (differentDataTypes.Any())
             {
-                //TODO: List columns
-                SB.AppendLine($"{schemaName}.{tableName} - Column(s) with different data types!");
+                string columnsWithDifferentDataTypes = differentOrdinals.Aggregate((current, next) => current + ", " + next);
+                results.AppendLine($"{schemaName}.{tableName} not compared: Column(s) with different data types: {columnsWithDifferentDataTypes}");
             }
 
-            return SB.ToString();
+            return results.ToString();
         }
+
+        //In LINQPad: private static string CurrentDirectory => Path.GetDirectoryName(Util.CurrentQueryPath);
+        private static string CurrentDirectory => Directory.GetParent(Directory.GetParent(Directory.GetCurrentDirectory()).FullName).FullName;
+
+        #endregion
+
+        #region Classes
+
+        private class Database
+        {
+            public string FriendlyName { get; }
+            public string ServerName { get; }
+            public string DatabaseName { get; }
+
+            public Database(string friendlyName, string serverName, string databaseName)
+            {
+                FriendlyName = friendlyName;
+                ServerName = serverName;
+                DatabaseName = databaseName;
+            }
+        }
+
+        private class DatabasePair
+        {
+            public Database Database1 { get; }
+            public Database Database2 { get; }
+
+            public DatabasePair(Database database1, Database database2)
+            {
+                Database1 = database1;
+                Database2 = database2;
+            }
+        }
+
+        private class Table
+        {
+            public string SchemaName { get; }
+            public string TableName { get; }
+
+            public Table(string schemaName, string tableName)
+            {
+                SchemaName = schemaName;
+                TableName = tableName;
+            }
+        }
+
+        #endregion
+
+        #region Enums
+
+        private enum DatabasePairPart
+        {
+            FriendlyName1,
+            ServerName1,
+            DatabaseName1,
+            FriendlyName2,
+            ServerName2,
+            DatabaseName2
+        }
+
+        private enum TablePart
+        {
+            SchemaName,
+            TableName
+        }
+
+        #endregion
+
     }
 }
