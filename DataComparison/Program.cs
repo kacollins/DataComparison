@@ -310,7 +310,7 @@ namespace DataComparison
 
             foreach (DataColumn dc in DT2Columns.Where(x => DT1Columns.All(y => y.ColumnName != x.ColumnName)))
             {
-                results.AppendLine($"{schemaName}.{tableName} not compared: {dc.ColumnName} column in {friendlyName2} but not in {friendlyName1}!");
+                results.AppendLine($"{schemaName}.{tableName} not compared: {dc.ColumnName} column is in {friendlyName2} but not in {friendlyName1}!");
             }
 
             List<string> differentOrdinals = DT1Columns.Where(x => DT2Columns.Any(y => y.ColumnName == x.ColumnName && y.Ordinal != x.Ordinal))
@@ -329,7 +329,7 @@ namespace DataComparison
 
             if (differentDataTypes.Any())
             {
-                string columnsWithDifferentDataTypes = differentOrdinals.Aggregate((current, next) => current + ", " + next);
+                string columnsWithDifferentDataTypes = differentDataTypes.Aggregate((current, next) => current + ", " + next);
                 results.AppendLine($"{schemaName}.{tableName} not compared: Column(s) with different data types: {columnsWithDifferentDataTypes}");
             }
 
