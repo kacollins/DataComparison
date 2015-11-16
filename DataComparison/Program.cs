@@ -22,6 +22,7 @@ namespace DataComparison
                 {
                     foreach (DatabasePair databasePair in databasesToCompare)
                     {
+                        DisplayProgressMessage($"Comparing {databasePair.Database1.FriendlyName} to {databasePair.Database2.FriendlyName}...");
                         CompareDatabases(tablesToCompare, databasePair);
                     }
 
@@ -74,7 +75,7 @@ namespace DataComparison
         private static List<DatabasePair> GetDatabasesToCompare()
         {
             List<DatabasePair> databasePairs = new List<DatabasePair>();
-            List<string> lines = GetFileLines("ConnectionStrings.supersecret");
+            List<string> lines = GetFileLines("DatabasePairs.supersecret");
 
             foreach (string[] parts in lines.Select(line => line.Split(',')))
             {
@@ -89,7 +90,7 @@ namespace DataComparison
                 }
                 else
                 {
-                    Console.WriteLine("Error: Invalid database pair in ConnectionStrings file.");
+                    Console.WriteLine("Error: Invalid database pair in DatabasePairs file.");
                 }
             }
 
@@ -123,6 +124,8 @@ namespace DataComparison
 
             foreach (Table table in tablesToCompare)
             {
+                DisplayProgressMessage($"Comparing {table.SchemaName}.{table.TableName}...");
+
                 string result = CompareTable(table, connection1, connection2,
                                             databasePair.Database1.FriendlyName,
                                             databasePair.Database2.FriendlyName);
@@ -177,6 +180,7 @@ namespace DataComparison
 
             try
             {
+                DisplayProgressMessage($"Retrieving data from {table.SchemaName}.{table.TableName} in {friendlyName1}...");
                 DT1 = GetDataTable(connection1, queryText);
             }
             catch (Exception ex)
@@ -186,6 +190,7 @@ namespace DataComparison
 
             try
             {
+                DisplayProgressMessage($"Retrieving data from {table.SchemaName}.{table.TableName} in {friendlyName2}...");
                 DT2 = GetDataTable(connection2, queryText);
             }
             catch (Exception ex)
@@ -195,6 +200,7 @@ namespace DataComparison
 
             if (DT1 != null && DT2 != null)
             {
+                DisplayProgressMessage("Data retrieval sucessfull!");
                 results = CompareDataTables(DT1, DT2, table.SchemaName, table.TableName, friendlyName1, friendlyName2).Trim();
             }
 
@@ -234,7 +240,7 @@ namespace DataComparison
         private static List<string> GetColumnsToIgnore()
         {
             //TODO: Read from file?
-            return new List<string>() { "UserCreated", "DateCreated", "UserModified", "DateModified" };
+            return new List<string>() { "UserCreated", "DateCreated", "UserModified", "DateModified", "SpatialLocation" }; //Comparison of geography data type from SQL appears to always return false
         }
 
         private static List<DataColumn> GetColumns(DataTable DT)
@@ -284,52 +290,156 @@ namespace DataComparison
                                                     List<DataRow> dataRows1, List<DataRow> dataRows2,
                                                     string friendlyName1, string friendlyName2)
         {
+            DisplayProgressMessage($"Checking for different IDs in {schemaName}.{tableName}...");
             StringBuilder results = new StringBuilder();
 
-            foreach (DataRow dataRow1 in dataRows1.Where(dr1 => dataRows2.All(dr2 => (int)dr1.ItemArray[0] != (int)dr2.ItemArray[0])))
+            List<DataRow> differentIDs = new List<DataRow>();
+
+            differentIDs = dataRows1.Except(dataRows2, new DataRowIDComparer()).ToList();
+
+            if (differentIDs.Any())
             {
-                results.AppendLine($"{schemaName}.{tableName}: ID = {(int)dataRow1.ItemArray[0]} is in {friendlyName1} but not in {friendlyName2}.");
-            }
-
-            foreach (DataRow datarow2 in dataRows2.Where(dr2 => dataRows1.All(dr1 => (int)dr2.ItemArray[0] != (int)dr1.ItemArray[0])))
-            {
-                results.AppendLine($"{schemaName}.{tableName}: ID = {(int)datarow2.ItemArray[0]} is in {friendlyName2} but not in {friendlyName1}.");
-            }
-
-            return results.ToString();
-        }
-
-        private static string GetDifferencesForSameIDs(string schemaName, string tableName, List<DataColumn> dataColumns,
-                                                        List<DataRow> dataRows1, List<DataRow> dataRows2,
-                                                        string friendlyName1, string friendlyName2)
-        {
-            StringBuilder results = new StringBuilder();
-            const char quote = '"';
-
-            //this assumes that the first column is the int ID column
-            foreach (DataRow dataRow1 in dataRows1.Where(dr1 => dataRows2.Any(dr2 => (int)dr1.ItemArray[0] == (int)dr2.ItemArray[0])))
-            {
-                foreach (DataColumn dataColumn in dataColumns.Where(dc => !dataRows2.Any(dr2 => (int)dr2.ItemArray[0] == (int)dataRow1.ItemArray[0]
-                                                                                             && dr2[dc.ColumnName].Equals(dataRow1[dc.ColumnName])
-                                                                                        )))
+                foreach (DataRow Diff in differentIDs)
                 {
-                    string column = dataColumn.ColumnName;
-                    int ID = (int)dataRow1.ItemArray[0];
-                    object value1 = dataRow1[dataColumn.ColumnName];
-                    object value2 = dataRows2.First(x => (int)x.ItemArray[0] == (int)dataRow1.ItemArray[0])[dataColumn.ColumnName];
+                    results.AppendLine($"{schemaName}.{tableName}: ID = {(int)Diff.ItemArray[0]} is in {friendlyName1} but not in {friendlyName2}.");
+                }
+            }
 
-                    string result = $"{schemaName}.{tableName}: {column} for ID = {ID} is {quote}{value1}{quote} in {friendlyName1} but {quote}{value2}{quote} in {friendlyName2}.";
-                    results.AppendLine(result);
+            differentIDs = dataRows2.Except(dataRows1, new DataRowIDComparer()).ToList();
+
+            if (differentIDs.Any())
+            {
+                foreach (DataRow Diff in differentIDs)
+                {
+                    results.AppendLine($"{schemaName}.{tableName}: ID = {(int)Diff.ItemArray[0]} is in {friendlyName2} but not in {friendlyName1}.");
                 }
             }
 
             return results.ToString();
         }
 
+        private class DataRowIDComparer : IEqualityComparer<DataRow>
+        {
+            public bool Equals(DataRow DR1, DataRow DR2)
+            {
+                return (int)DR1.ItemArray[0] == (int)DR2.ItemArray[0];
+            }
+
+            public int GetHashCode(DataRow DR)
+            {
+                // Check whether the object is null. 
+                if (Object.ReferenceEquals(DR, null))
+                {
+                    return 0;
+                }
+
+                return DR.ItemArray[0].GetHashCode();
+            }
+        }
+
+        private static string GetDifferencesForSameIDs(string schemaName, string tableName, List<DataColumn> dataColumns,
+                                                        List<DataRow> dataRows1, List<DataRow> dataRows2,
+                                                        string friendlyName1, string friendlyName2)
+        {
+            DisplayProgressMessage($"Checking for differences in {schemaName}.{tableName}...");
+
+            StringBuilder results = new StringBuilder();
+            const char quote = '"';
+
+            //this assumes that the first column is the int ID column
+            //Find the set of rows with IDs that are common between the two sets.
+            List<DataRow> RowsWithTheSameIDs = dataRows1.Intersect(dataRows2, new DataRowIDComparer()).ToList();
+
+            //Find all the rows from the first set that are in the common set
+            //Find all the rows from the second set that are in the common set
+            //Find all the rows that have IDs in the common set, but have different column values
+            List<DataRow> DifferentRows = dataRows1
+                                            .Intersect(RowsWithTheSameIDs, new DataRowIDComparer())
+                                                .Except
+                                                        (
+                                                            dataRows2.Intersect(RowsWithTheSameIDs, new DataRowIDComparer())
+                                                            , new DataRowComparer(dataColumns)
+                                                        ).ToList();
+
+            foreach (DataRow DR in DifferentRows)
+            {
+                DataRow DR1 = dataRows1.Where(dr1 => (int)dr1.ItemArray[0] == (int)DR.ItemArray[0]).Single();
+                DataRow DR2 = dataRows2.Where(dr2 => (int)dr2.ItemArray[0] == (int)DR.ItemArray[0]).Single();
+
+                foreach (DataColumn dataColumn in dataColumns)
+                {
+                    if (!DR1[dataColumn.ColumnName].Equals(DR2[dataColumn.ColumnName]))
+                    {
+                        string column = dataColumn.ColumnName;
+                        int ID = (int)DR1.ItemArray[0];
+                        object value1 = DR1[dataColumn.ColumnName];
+                        object value2 = DR2[dataColumn.ColumnName];
+
+                        string result = $"{schemaName}.{tableName}: {column} for ID = {ID} is {quote}{value1}{quote} in {friendlyName1} but {quote}{value2}{quote} in {friendlyName2}.";
+                        results.AppendLine(result);
+                    }
+                }
+            }
+
+            return results.ToString();
+        }
+
+        private class DataRowComparer : IEqualityComparer<DataRow>
+        {
+            private List<DataColumn> dataColumns;
+
+            public DataRowComparer(List<DataColumn> DataColumns)
+            {
+                dataColumns = DataColumns;
+            }
+
+            public bool Equals(DataRow DR1, DataRow DR2)
+            {
+                if ((int)DR1.ItemArray[0] == (int)DR2.ItemArray[0])
+                {
+                    foreach (DataColumn dataColumn in dataColumns)
+                    {
+                        if (!DR2[dataColumn.ColumnName].Equals(DR1[dataColumn.ColumnName]))
+                        {
+                            return false;
+                        }
+                    }
+
+                    return true;
+                }
+                else
+                {
+                    return false;
+                }
+            }
+
+            public int GetHashCode(DataRow DR)
+            {
+                // Check whether the object is null. 
+                if (Object.ReferenceEquals(DR, null))
+                {
+                    return 0;
+                }
+
+                int hash = 0;
+                foreach (DataColumn dataColumn in dataColumns)
+                {
+                    //This is from https://msdn.microsoft.com/en-us/library/bb336390(v=vs.90).aspx
+                    //I'm not at all sure that it is correct here.
+                    //It looks like more reading can be done here if this is determined to be stupid:
+                    //https://msdn.microsoft.com/en-us/library/system.object.gethashcode(v=vs.110).aspx
+                    hash = hash ^ DR[dataColumn.ColumnName].GetHashCode();
+                }
+
+                return hash;
+            }
+        }
+
         private static string GetValidationErrors(string schemaName, string tableName,
                                                     List<DataColumn> dc1, List<DataColumn> dc2,
                                                     string friendlyName1, string friendlyName2)
         {
+            DisplayProgressMessage($"Validating {schemaName}.{tableName}...");
             StringBuilder results = new StringBuilder();
 
             //TODO: Make sure ID value is an int
@@ -358,6 +468,7 @@ namespace DataComparison
 
         private static string CheckForDifferentDataTypes(string schemaName, string tableName, List<DataColumn> dc1, List<DataColumn> dc2)
         {
+            DisplayProgressMessage($"Checking for different data types in {schemaName}.{tableName}...");
             string result = string.Empty;
 
             List<string> differentDataTypes = dc1.Where(x => dc2.Any(y => y.ColumnName == x.ColumnName && y.DataType != x.DataType))
@@ -376,6 +487,15 @@ namespace DataComparison
 
         //In LINQPad: private static string CurrentDirectory => Path.GetDirectoryName(Util.CurrentQueryPath);
         private static string CurrentDirectory => Directory.GetParent(Directory.GetParent(Directory.GetCurrentDirectory()).FullName).FullName;
+
+        private static void DisplayProgressMessage(string Message, bool ClearScreen = false)
+        {
+            if (ClearScreen)
+            {
+                Console.Clear();
+            }
+            Console.WriteLine(Message);
+        }
 
         #endregion
 
