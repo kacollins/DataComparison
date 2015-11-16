@@ -144,7 +144,14 @@ namespace DataComparison
                 string fileContents = results.Aggregate((current, next) => current + Environment.NewLine + next);
 
                 const char backSlash = '\\';
-                string filePath = $"{CurrentDirectory}{backSlash}Results{backSlash}{fileName}.txt";
+                string directory = $"{CurrentDirectory}{backSlash}Results";
+
+                if (!Directory.Exists(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+
+                string filePath = $"{directory}{backSlash}{fileName}.txt";
 
                 if (File.Exists(filePath))
                 {
