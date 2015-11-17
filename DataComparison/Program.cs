@@ -185,7 +185,7 @@ namespace DataComparison
         private static List<string> CompareTable(Table table, SqlConnection connection1, SqlConnection connection2,
                                                 string friendlyName1, string friendlyName2)
         {
-            string queryText = $"SELECT * FROM [{table.SchemaName}].[{table.TableName}]";
+            string queryText = $"SELECT * FROM {table.SchemaName}.{table.TableName}";
             List<string> results = new List<string>();
             DataTable DT1 = null;
             DataTable DT2 = null;
@@ -286,26 +286,37 @@ namespace DataComparison
             List<DataRow> dr1 = GetRows(dt1);
             List<DataRow> dr2 = GetRows(dt2);
 
-            List<string> validationErrors = GetValidationErrors(schemaName, tableName, dc1, dc2, friendlyName1, friendlyName2);
+            string idColumnName = dc1.First().ColumnName;
 
-            foreach (DataColumn dc in dc1.Where(x => dc2.All(y => x.ColumnName != y.ColumnName)))
+            List<string> validationErrors = GetValidationErrors(schemaName, tableName, idColumnName, friendlyName1, friendlyName2, dr1, dr2);
+
+            if (validationErrors.Any())
             {
-                dt1.Columns.Remove(dc);
+                return validationErrors;
             }
-
-            foreach (DataColumn dc in dc2.Where(x => dc1.All(y => x.ColumnName != y.ColumnName)))
+            else
             {
-                dt2.Columns.Remove(dc);
+                List<string> validationWarnings = GetValidationWarnings(schemaName, tableName, dc1, dc2, friendlyName1, friendlyName2);
+
+                foreach (DataColumn dc in dc1.Where(x => dc2.All(y => x.ColumnName != y.ColumnName)))
+                {
+                    dt1.Columns.Remove(dc);
+                }
+
+                foreach (DataColumn dc in dc2.Where(x => dc1.All(y => x.ColumnName != y.ColumnName)))
+                {
+                    dt2.Columns.Remove(dc);
+                }
+
+                List<string> differencesInIDs = GetDifferencesInIDs(schemaName, tableName, dr1, dr2, friendlyName1, friendlyName2, idColumnName);
+
+                dc1 = GetColumns(dt1).ToList();
+                List<string> differencesForSameIDs = GetDifferencesForSameIDs(schemaName, tableName, dc1, dr1, dr2, friendlyName1, friendlyName2);
+
+                List<string> results = validationErrors.Union(differencesInIDs).Union(differencesForSameIDs).ToList();
+
+                return results;
             }
-
-            List<string> differencesInIDs = GetDifferencesInIDs(schemaName, tableName, dr1, dr2, friendlyName1, friendlyName2, dc1.First().ColumnName);
-
-            dc1 = GetColumns(dt1).ToList();
-            List<string> differencesForSameIDs = GetDifferencesForSameIDs(schemaName, tableName, dc1, dr1, dr2, friendlyName1, friendlyName2);
-
-            List<string> results = validationErrors.Union(differencesInIDs).Union(differencesForSameIDs).ToList();
-
-            return results;
         }
 
         private static List<string> GetDifferencesInIDs(string schema, string table,
@@ -365,15 +376,15 @@ namespace DataComparison
             List<string> results = new List<string>();
             const char quote = '\'';
 
-            DataRow DR1 = dataRows1.Single(dr1 => (int)dr1.ItemArray[0] == (int)DR.ItemArray[0]);
-            DataRow DR2 = dataRows2.Single(dr2 => (int)dr2.ItemArray[0] == (int)DR.ItemArray[0]);
+            DataRow DR1 = dataRows1.Single(dr1 => int.Parse(dr1.ItemArray[0].ToString()) == int.Parse(DR.ItemArray[0].ToString()));
+            DataRow DR2 = dataRows2.Single(dr2 => int.Parse(dr2.ItemArray[0].ToString()) == int.Parse(DR.ItemArray[0].ToString()));
 
             string idName = dataColumns.First().ColumnName;
 
             foreach (DataColumn dataColumn in dataColumns.Where(dc => !DR1[dc.ColumnName].Equals(DR2[dc.ColumnName])))
             {
                 string column = dataColumn.ColumnName;
-                int ID = (int)DR1.ItemArray[0];
+                int ID = int.Parse(DR1.ItemArray[0].ToString());
                 object value1 = DR1[dataColumn.ColumnName];
                 object value2 = DR2[dataColumn.ColumnName];
 
@@ -384,22 +395,43 @@ namespace DataComparison
             return results;
         }
 
-        private static List<string> GetValidationErrors(string schemaName, string tableName,
+        private static List<string> GetValidationErrors(string schemaName, string tableName, string idName,
+                                                        string friendlyName1, string friendlyName2,
+                                                        List<DataRow> dataRows1, List<DataRow> dataRows2)
+        {
+            DisplayProgressMessage($"Checking {schemaName}.{tableName} for validation errors...");
+
+            List<string> results = new List<string>();
+
+            //Make sure ID is an int
+            int output;
+            results.AddRange(dataRows1.Where(r => !int.TryParse(r.ItemArray[0].ToString(), out output))
+                                        .Select(d => $"{schemaName}.{tableName} where {idName} = {d.ItemArray[0]} --ID is not an int in {friendlyName1}"));
+            results.AddRange(dataRows2.Where(r => !int.TryParse(r.ItemArray[0].ToString(), out output))
+                                        .Select(d => $"{schemaName}.{tableName} where {idName} = {d.ItemArray[0]} --ID is not an int in {friendlyName2}"));
+
+            //Check for duplicate ID values
+            results.AddRange(dataRows1.GroupBy(r => r.ItemArray[0]).Where(g => g.Count() > 1)
+                                        .Select(d => $"{schemaName}.{tableName} where {idName} = {d.Key} --Duplicate ID in {friendlyName1}"));
+            results.AddRange(dataRows2.GroupBy(r => r.ItemArray[0]).Where(g => g.Count() > 1)
+                                        .Select(d => $"{schemaName}.{tableName} where {idName} = {d.Key} --Duplicate ID in {friendlyName2}"));
+
+            return results;
+        }
+
+        private static List<string> GetValidationWarnings(string schemaName, string tableName,
                                                         List<DataColumn> dc1, List<DataColumn> dc2,
                                                         string friendlyName1, string friendlyName2)
         {
-            DisplayProgressMessage($"Validating {schemaName}.{tableName}...");
+            DisplayProgressMessage($"Checking {schemaName}.{tableName} for validation warnings...");
 
-            //TODO: Make sure ID value is an int
+            List<string> results = new List<string>();
 
-            //TODO: check for duplicate ID values
-
-            List<string> results = dc1.Where(x => dc2.All(y => y.ColumnName != x.ColumnName))
-                                        .Select(dc => $"{schemaName}.{tableName} --{dc.ColumnName} column is in {friendlyName1} but not in {friendlyName2}.")
-                                        .ToList();
+            results.AddRange(dc1.Where(x => dc2.All(y => y.ColumnName != x.ColumnName))
+                                .Select(dc => $"{schemaName}.{tableName} --{dc.ColumnName} column is in {friendlyName1} but not in {friendlyName2}."));
 
             results.AddRange(dc2.Where(x => dc1.All(y => y.ColumnName != x.ColumnName))
-                                        .Select(dc => $"{schemaName}.{tableName} --{dc.ColumnName} column is in {friendlyName2} but not in {friendlyName1}."));
+                                .Select(dc => $"{schemaName}.{tableName} --{dc.ColumnName} column is in {friendlyName2} but not in {friendlyName1}."));
 
             string dataTypesResult = CheckForDifferentDataTypes(schemaName, tableName, dc1, dc2);
 
@@ -447,7 +479,7 @@ namespace DataComparison
         #region Properties
 
         //In LINQPad: private static string CurrentDirectory => Path.GetDirectoryName(Util.CurrentQueryPath);
-        private static string CurrentDirectory => Directory.GetParent(Directory.GetParent(Directory.GetCurrentDirectory()).FullName).FullName;
+        private static string CurrentDirectory => Directory.GetCurrentDirectory();  //bin\Debug
 
         private static string DateForFileName => DateTime.Today.ToString("yyyyMMdd");
 
@@ -528,7 +560,7 @@ namespace DataComparison
         {
             public bool Equals(DataRow DR1, DataRow DR2)
             {
-                return (int)DR1.ItemArray[0] == (int)DR2.ItemArray[0];
+                return int.Parse(DR1.ItemArray[0].ToString()) == int.Parse(DR2.ItemArray[0].ToString());
             }
 
             public int GetHashCode(DataRow DR)
