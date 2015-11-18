@@ -14,31 +14,20 @@ namespace DataComparison
         {
             //TODO: add argument for whether this is being run manually vs automated?
 
-            List<Table> tablesToCompare = GetTablesToCompare();
+            string tableFileName = string.Empty;
+            string databaseFileName = string.Empty;
 
-            if (tablesToCompare.Any())
+            if (args.Length > (int)InputFile.TablesToCompare)
             {
-                List<DatabasePair> databasesToCompare = GetDatabasesToCompare();
+                tableFileName = args[(int)InputFile.TablesToCompare];
 
-                if (databasesToCompare.Any())
+                if (args.Length > (int)InputFile.DatabasePairs)
                 {
-                    foreach (DatabasePair databasePair in databasesToCompare)
-                    {
-                        DisplayProgressMessage($"Comparing {databasePair.Database1.FriendlyName} to {databasePair.Database2.FriendlyName}...");
-                        CompareDatabases(tablesToCompare, databasePair);
-                    }
-
-                    Console.WriteLine("Done!");
-                }
-                else
-                {
-                    HandleTopLevelError("No databases to compare!");
+                    databaseFileName = args[(int)InputFile.DatabasePairs];
                 }
             }
-            else
-            {
-                HandleTopLevelError("No tables to compare!");
-            }
+
+            CompareTables(tableFileName, databaseFileName);
 
             Console.WriteLine("Press enter to exit:");
             Console.Read();
@@ -46,15 +35,54 @@ namespace DataComparison
 
         #region Methods
 
+        private static void CompareTables(string tableFileName, string databaseFileName)
+        {
+            List<Table> tablesToCompare = GetTablesToCompare(tableFileName);
+
+            if (tablesToCompare.Any())
+            {
+                CompareDatabasePairs(databaseFileName, tablesToCompare);
+            }
+            else
+            {
+                HandleTopLevelError("No tables to compare!");
+            }
+        }
+
+        private static void CompareDatabasePairs(string databaseFileName, List<Table> tablesToCompare)
+        {
+            List<DatabasePair> databasePairs = GetDatabasePairs(databaseFileName);
+
+            if (databasePairs.Any())
+            {
+                foreach (DatabasePair dbPair in databasePairs)
+                {
+                    DisplayProgressMessage($"Comparing {dbPair.Database1.FriendlyName} to {dbPair.Database2.FriendlyName}...");
+                    CompareDatabasePair(tablesToCompare, dbPair);
+                }
+
+                Console.WriteLine("Done!");
+            }
+            else
+            {
+                HandleTopLevelError("No databases to compare!");
+            }
+        }
+
         private static void HandleTopLevelError(string errorMessage)
         {
             Console.WriteLine(errorMessage);
             WriteToFile($"{DateForFileName}_Error", errorMessage);
         }
 
-        private static List<Table> GetTablesToCompare()
+        private static List<Table> GetTablesToCompare(string fileName)
         {
-            List<string> lines = GetFileLines($"{InputFile.TablesToCompare}.supersecret");
+            if (string.IsNullOrWhiteSpace(fileName))
+            {
+                fileName = $"{InputFile.TablesToCompare}.supersecret";
+            }
+
+            List<string> lines = GetFileLines(fileName);
 
             List<Table> tablesToCompare = new List<Table>();
 
@@ -81,10 +109,15 @@ namespace DataComparison
             return tablesToCompare;
         }
 
-        private static List<DatabasePair> GetDatabasesToCompare()
+        private static List<DatabasePair> GetDatabasePairs(string fileName)
         {
+            if (string.IsNullOrWhiteSpace(fileName))
+            {
+                fileName = $"{InputFile.DatabasePairs}.supersecret";
+            }
+
             List<DatabasePair> databasePairs = new List<DatabasePair>();
-            List<string> lines = GetFileLines($"{InputFile.DatabasePairs}.supersecret");
+            List<string> lines = GetFileLines(fileName);
 
             foreach (string[] parts in lines.Select(line => line.Split(',')))
             {
@@ -125,7 +158,7 @@ namespace DataComparison
             }
         }
 
-        private static void CompareDatabases(List<Table> tablesToCompare, DatabasePair databasePair)
+        private static void CompareDatabasePair(List<Table> tablesToCompare, DatabasePair databasePair)
         {
             List<string> results = new List<string>();
 
@@ -303,6 +336,7 @@ namespace DataComparison
                     dt1.Columns.Remove(dc);
                 }
 
+                dc1 = GetColumns(dt1).ToList();
                 foreach (DataColumn dc in dc2.Where(x => dc1.All(y => x.ColumnName != y.ColumnName)))
                 {
                     dt2.Columns.Remove(dc);
@@ -310,10 +344,9 @@ namespace DataComparison
 
                 List<string> differencesInIDs = GetDifferencesInIDs(schemaName, tableName, dr1, dr2, friendlyName1, friendlyName2, idColumnName);
 
-                dc1 = GetColumns(dt1).ToList();
                 List<string> differencesForSameIDs = GetDifferencesForSameIDs(schemaName, tableName, dc1, dr1, dr2, friendlyName1, friendlyName2);
 
-                List<string> results = validationErrors.Union(differencesInIDs).Union(differencesForSameIDs).ToList();
+                List<string> results = validationWarnings.Union(differencesInIDs).Union(differencesForSameIDs).ToList();
 
                 return results;
             }
@@ -373,67 +406,70 @@ namespace DataComparison
                                                             List<DataRow> dataRows1, List<DataRow> dataRows2,
                                                             string friendlyName1, string friendlyName2, DataRow DR)
         {
-            List<string> results = new List<string>();
-            const char quote = '\'';
-
             DataRow DR1 = dataRows1.Single(dr1 => int.Parse(dr1.ItemArray[0].ToString()) == int.Parse(DR.ItemArray[0].ToString()));
             DataRow DR2 = dataRows2.Single(dr2 => int.Parse(dr2.ItemArray[0].ToString()) == int.Parse(DR.ItemArray[0].ToString()));
 
             string idName = dataColumns.First().ColumnName;
 
-            foreach (DataColumn dataColumn in dataColumns.Where(dc => !DR1[dc.ColumnName].Equals(DR2[dc.ColumnName])))
-            {
-                string column = dataColumn.ColumnName;
-                int ID = int.Parse(DR1.ItemArray[0].ToString());
-                object value1 = DR1[dataColumn.ColumnName];
-                object value2 = DR2[dataColumn.ColumnName];
-
-                string result = $"{schema}.{table} where {idName} = {ID} --{column} = {quote}{value1}{quote} in {friendlyName1} but {quote}{value2}{quote} in {friendlyName2}.";
-                results.Add(result);
-            }
-
-            return results;
+            return dataColumns.Where(dc => !DR1[dc.ColumnName].Equals(DR2[dc.ColumnName]))
+                                .Select(dataColumn => GetColumnDifference(schema, table, friendlyName1, friendlyName2, dataColumn, DR1, DR2, idName))
+                                .ToList();
         }
 
-        private static List<string> GetValidationErrors(string schemaName, string tableName, string idName,
+        private static string GetColumnDifference(string schema, string table, string friendlyName1, string friendlyName2,
+                                                    DataColumn dataColumn, DataRow DR1, DataRow DR2, string idName)
+        {
+            const char quote = '\'';
+
+            string column = dataColumn.ColumnName;
+            int ID = int.Parse(DR1.ItemArray[0].ToString());
+
+            string value1 = $"{quote}{DR1[dataColumn.ColumnName]}{quote}";
+            string value2 = $"{quote}{DR2[dataColumn.ColumnName]}{quote}";
+
+            string result = $"{schema}.{table} where {idName} = {ID} --{column} = {value1} in {friendlyName1} but {value2} in {friendlyName2}.";
+            return result;
+        }
+
+        private static List<string> GetValidationErrors(string schema, string table, string idName,
                                                         string friendlyName1, string friendlyName2,
                                                         List<DataRow> dataRows1, List<DataRow> dataRows2)
         {
-            DisplayProgressMessage($"Checking {schemaName}.{tableName} for validation errors...");
+            DisplayProgressMessage($"Checking {schema}.{table} for validation errors...");
 
             List<string> results = new List<string>();
 
             //Make sure ID is an int
             int output;
             results.AddRange(dataRows1.Where(r => !int.TryParse(r.ItemArray[0].ToString(), out output))
-                                        .Select(d => $"{schemaName}.{tableName} where {idName} = {d.ItemArray[0]} --ID is not an int in {friendlyName1}"));
+                                        .Select(d => $"{schema}.{table} where {idName} = {d.ItemArray[0]} --ID is not an int in {friendlyName1}"));
             results.AddRange(dataRows2.Where(r => !int.TryParse(r.ItemArray[0].ToString(), out output))
-                                        .Select(d => $"{schemaName}.{tableName} where {idName} = {d.ItemArray[0]} --ID is not an int in {friendlyName2}"));
+                                        .Select(d => $"{schema}.{table} where {idName} = {d.ItemArray[0]} --ID is not an int in {friendlyName2}"));
 
             //Check for duplicate ID values
             results.AddRange(dataRows1.GroupBy(r => r.ItemArray[0]).Where(g => g.Count() > 1)
-                                        .Select(d => $"{schemaName}.{tableName} where {idName} = {d.Key} --Duplicate ID in {friendlyName1}"));
+                                        .Select(d => $"{schema}.{table} where {idName} = {d.Key} --Duplicate ID in {friendlyName1}"));
             results.AddRange(dataRows2.GroupBy(r => r.ItemArray[0]).Where(g => g.Count() > 1)
-                                        .Select(d => $"{schemaName}.{tableName} where {idName} = {d.Key} --Duplicate ID in {friendlyName2}"));
+                                        .Select(d => $"{schema}.{table} where {idName} = {d.Key} --Duplicate ID in {friendlyName2}"));
 
             return results;
         }
 
-        private static List<string> GetValidationWarnings(string schemaName, string tableName,
+        private static List<string> GetValidationWarnings(string schema, string table,
                                                         List<DataColumn> dc1, List<DataColumn> dc2,
                                                         string friendlyName1, string friendlyName2)
         {
-            DisplayProgressMessage($"Checking {schemaName}.{tableName} for validation warnings...");
+            DisplayProgressMessage($"Checking {schema}.{table} for validation warnings...");
 
             List<string> results = new List<string>();
 
             results.AddRange(dc1.Where(x => dc2.All(y => y.ColumnName != x.ColumnName))
-                                .Select(dc => $"{schemaName}.{tableName} --{dc.ColumnName} column is in {friendlyName1} but not in {friendlyName2}."));
+                                .Select(dc => $"{schema}.{table} --{dc.ColumnName} column is in {friendlyName1} but not in {friendlyName2}."));
 
             results.AddRange(dc2.Where(x => dc1.All(y => y.ColumnName != x.ColumnName))
-                                .Select(dc => $"{schemaName}.{tableName} --{dc.ColumnName} column is in {friendlyName2} but not in {friendlyName1}."));
+                                .Select(dc => $"{schema}.{table} --{dc.ColumnName} column is in {friendlyName2} but not in {friendlyName1}."));
 
-            string dataTypesResult = CheckForDifferentDataTypes(schemaName, tableName, dc1, dc2);
+            string dataTypesResult = CheckForDifferentDataTypes(schema, table, dc1, dc2);
 
             if (string.IsNullOrWhiteSpace(dataTypesResult))
             {
