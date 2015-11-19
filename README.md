@@ -26,3 +26,7 @@ Create these two text files and put them in the bin\Debug folder:
 The results will go in a folder called Results under bin\Debug, with one file per database pair per day.
 
 When scheduling the task, put the location of the bin\Debug folder in the "Start in (optional)" field.
+
+Optional arguments:
+* different filename for TablesToCompare.supersecret (ex: EnumTables.supersecret or MyTables.txt)
+* different filename for DatabasePairs.supersecret (ex: MyDatabases.supersecret or AnotherListOfDatabases.txt)
