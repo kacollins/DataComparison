@@ -296,10 +296,18 @@ namespace DataComparison
             };
         }
 
-        private static List<DataColumn> GetColumns(DataTable DT)
+        private static List<DataColumn> GetColumns(DataTable DT, bool excludeColumnsToIgnore)
         {
-            List<string> columnsToIgnore = GetColumnsToIgnore();
-            return DT.Columns.Cast<DataColumn>().Where(dc => !columnsToIgnore.Contains(dc.ColumnName)).ToList();
+            List<DataColumn> columns = DT.Columns.Cast<DataColumn>().ToList();
+
+            if (excludeColumnsToIgnore)
+            {
+                List<string> columnsToIgnore = GetColumnsToIgnore();
+
+                columns = columns.Where(dc => !columnsToIgnore.Contains(dc.ColumnName)).ToList();
+            }
+
+            return columns;
         }
 
         private static List<DataRow> GetRows(DataTable DT)
@@ -314,8 +322,8 @@ namespace DataComparison
                                                 string friendlyName1, string friendlyName2,
                                                 string dbName1, string dbName2)
         {
-            List<DataColumn> dc1 = GetColumns(dt1);
-            List<DataColumn> dc2 = GetColumns(dt2);
+            List<DataColumn> dc1 = GetColumns(dt1, true);
+            List<DataColumn> dc2 = GetColumns(dt2, true);
 
             List<DataRow> dr1 = GetRows(dt1);
             List<DataRow> dr2 = GetRows(dt2);
@@ -337,14 +345,16 @@ namespace DataComparison
                     dt1.Columns.Remove(dc);
                 }
 
-                dc1 = GetColumns(dt1).ToList();
                 foreach (DataColumn dc in dc2.Where(x => dc1.All(y => x.ColumnName != y.ColumnName)))
                 {
                     dt2.Columns.Remove(dc);
                 }
 
-                List<string> differencesInIDs = GetDifferencesInIDs(schemaName, tableName, dr1, dr2, friendlyName1, friendlyName2, dc1, dbName1, dbName2);
+                List<DataColumn> dc1All = GetColumns(dt1, false).ToList();
+                List<DataColumn> dc2All = GetColumns(dt2, false).ToList();
+                List<string> differencesInIDs = GetDifferencesInIDs(schemaName, tableName, dr1, dr2, friendlyName1, friendlyName2, dc1All, dc2All, dbName1, dbName2);
 
+                dc1 = GetColumns(dt1, true).ToList();
                 List<string> differencesForSameIDs = GetDifferencesForSameIDs(schemaName, tableName, dc1, dr1, dr2, friendlyName1, friendlyName2);
 
                 List<string> results = validationWarnings.Union(differencesInIDs).Union(differencesForSameIDs).ToList();
@@ -355,34 +365,49 @@ namespace DataComparison
 
         private static List<string> GetDifferencesInIDs(string schema, string table,
                                                         List<DataRow> dataRows1, List<DataRow> dataRows2,
-                                                        string friendlyName1, string friendlyName2, List<DataColumn> dc1,
+                                                        string friendlyName1, string friendlyName2, 
+                                                        List<DataColumn> dc1All, List<DataColumn> dc2All,
                                                         string dbName1, string dbName2)
         {
             DisplayProgressMessage($"Checking for different IDs in {schema}.{table}...");
 
-            string idName = dc1.First().ColumnName;
-
-            List<DataRow> rowsIn1ButNot2 = dataRows1.Except(dataRows2, new DataRowIDComparer()).ToList();
-
-            List<string> results = rowsIn1ButNot2.Select(d => $"SELECT * FROM {schema}.{table} WHERE {idName} = {(int)d.ItemArray[0]} --in {friendlyName1} but not in {friendlyName2}.")
-                                                    .ToList();
+            string idName = dc1All.First().ColumnName;
+            List<string> results = new List<string>();
 
             string identityOn = $"SET IDENTITY_INSERT {schema}.{table} ON";
             string identityOff = $"SET IDENTITY_INSERT {schema}.{table} OFF";
 
-            string columnList = dc1.Select(dc => dc.ColumnName).Aggregate((current, next) => $"{current}, {next}");
+            string columnList1 = dc1All.Select(dc => dc.ColumnName).Aggregate((current, next) => $"{current}, {next}");
+            string columnList2 = dc2All.Select(dc => dc.ColumnName).Aggregate((current, next) => $"{current}, {next}");
 
+            string insertInto1 = $"INSERT INTO {dbName1}.{schema}.{table}({columnList1})";
+            string insertInto2 = $"INSERT INTO {dbName2}.{schema}.{table}({columnList2})";
+
+            //TODO: sort results so that all the lines for a given ID are together
+
+            List<DataRow> rowsIn1ButNot2 = dataRows1.Except(dataRows2, new DataRowIDComparer()).ToList();
+
+            results.AddRange(rowsIn1ButNot2.Select(d => $"SELECT * FROM {schema}.{table} WHERE {idName} = {(int)d.ItemArray[0]} --in {friendlyName1} but not in {friendlyName2}."));
+
+            //generate a script to insert the record into database2
             results.AddRange(rowsIn1ButNot2.Select(r => r.ItemArray.Select(i => i.ToString())
                                                         .Aggregate((current, next) => $"{current}, '{next}'"))
-                                            .Select(valueList => $"--{identityOn} INSERT INTO {dbName1}.{schema}.{table}({columnList}) VALUES({valueList}) {identityOff} --Insert into {friendlyName2}"));
+                                            .Select(values => $"--{identityOn} {insertInto2} VALUES({values}) {identityOff} --Insert into {friendlyName2}"));
+
+            //generate a script to delete the record from database1
+            results.AddRange(rowsIn1ButNot2.Select(r => $"--DELETE FROM {dbName1}.{schema}.{table} WHERE {idName} = {(int)r.ItemArray[0]} --Delete from {friendlyName1}"));
 
             List<DataRow> rowsIn2ButNot1 = dataRows2.Except(dataRows1, new DataRowIDComparer()).ToList();
 
             results.AddRange(rowsIn2ButNot1.Select(d => $"SELECT * FROM {schema}.{table} WHERE {idName} = {(int)d.ItemArray[0]} --in {friendlyName2} but not in {friendlyName1}."));
-            
+
+            //generate a script to insert the record into database1
             results.AddRange(rowsIn2ButNot1.Select(r => r.ItemArray.Select(i => i.ToString())
                                                         .Aggregate((current, next) => $"{current}, '{next}'"))
-                                            .Select(valueList => $"--{identityOn} INSERT INTO {dbName1}.{schema}.{table}({columnList}) VALUES({valueList}) {identityOff} --Insert into {friendlyName2}"));
+                                            .Select(values => $"--{identityOn} {insertInto1} VALUES({values}) {identityOff} --Insert into {friendlyName1}"));
+
+            //generate a script to delete the record from database2
+            results.AddRange(rowsIn2ButNot1.Select(r => $"--DELETE FROM {dbName2}.{schema}.{table} WHERE {idName} = {(int)r.ItemArray[0]} --Delete from {friendlyName2}"));
 
             return results;
         }
@@ -457,9 +482,9 @@ namespace DataComparison
             //Make sure ID is an int
             int output;
             results.AddRange(dataRows1.Where(r => !int.TryParse(r.ItemArray[0].ToString(), out output))
-                                        .Select(d => $"SELECT * FROM {schema}.{table} WHERE {idName} = {d.ItemArray[0]} --ID is not an int in {friendlyName1} (table not compared)"));
+                                        .Select(d => $"SELECT * FROM {schema}.{table} WHERE {idName} = '{d.ItemArray[0]}' --ID is not an int in {friendlyName1} (table not compared)"));
             results.AddRange(dataRows2.Where(r => !int.TryParse(r.ItemArray[0].ToString(), out output))
-                                        .Select(d => $"SELECT * FROM {schema}.{table} WHERE {idName} = {d.ItemArray[0]} --ID is not an int in {friendlyName2} (table not compared)"));
+                                        .Select(d => $"SELECT * FROM {schema}.{table} WHERE {idName} = '{d.ItemArray[0]}' --ID is not an int in {friendlyName2} (table not compared)"));
 
             //Check for duplicate ID values
             results.AddRange(dataRows1.GroupBy(r => r.ItemArray[0]).Where(g => g.Count() > 1)
@@ -497,6 +522,8 @@ namespace DataComparison
         private static string CheckForDifferentDataTypes(string schema, string table,
                                                         List<DataColumn> dc1, List<DataColumn> dc2)
         {
+            //TODO: Determine whether different data types even matter
+
             DisplayProgressMessage($"Checking for different data types in {schema}.{table}...");
             string result = string.Empty;
 
