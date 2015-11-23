@@ -374,7 +374,7 @@ namespace DataComparison
 
             results.AddRange(rowsIn1ButNot2.Select(r => r.ItemArray.Select(i => i.ToString())
                                                         .Aggregate((current, next) => $"{current}, '{next}'"))
-                                            .Select(valueList => $"--{identityOn} INSERT INTO {dbName1}.{schema}.{table}({columnList}) VALUES({valueList}) {identityOff} --Insert into {friendlyName2}"));
+                                            .Select(valueList => $"--{identityOn} INSERT INTO {dbName2}.{schema}.{table}({columnList}) VALUES({valueList}) {identityOff} --Insert into {friendlyName2}"));
 
             List<DataRow> rowsIn2ButNot1 = dataRows2.Except(dataRows1, new DataRowIDComparer()).ToList();
 
@@ -382,7 +382,7 @@ namespace DataComparison
             
             results.AddRange(rowsIn2ButNot1.Select(r => r.ItemArray.Select(i => i.ToString())
                                                         .Aggregate((current, next) => $"{current}, '{next}'"))
-                                            .Select(valueList => $"--{identityOn} INSERT INTO {dbName1}.{schema}.{table}({columnList}) VALUES({valueList}) {identityOff} --Insert into {friendlyName2}"));
+                                            .Select(valueList => $"--{identityOn} INSERT INTO {dbName1}.{schema}.{table}({columnList}) VALUES({valueList}) {identityOff} --Insert into {friendlyName1}"));
 
             return results;
         }
