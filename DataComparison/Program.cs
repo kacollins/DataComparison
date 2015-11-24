@@ -365,51 +365,29 @@ namespace DataComparison
 
         private static List<string> GetDifferencesInIDs(string schema, string table,
                                                         List<DataRow> dataRows1, List<DataRow> dataRows2,
-                                                        string friendlyName1, string friendlyName2, 
+                                                        string friendlyName1, string friendlyName2,
                                                         List<DataColumn> dc1All, List<DataColumn> dc2All,
                                                         string dbName1, string dbName2)
         {
             DisplayProgressMessage($"Checking for different IDs in {schema}.{table}...");
 
             string idName = dc1All.First().ColumnName;
-            List<string> results = new List<string>();
+            List<ScriptForID> results = new List<ScriptForID>();
 
-            string identityOn = $"SET IDENTITY_INSERT {schema}.{table} ON";
-            string identityOff = $"SET IDENTITY_INSERT {schema}.{table} OFF";
-
-            string columnList1 = dc1All.Select(dc => dc.ColumnName).Aggregate((current, next) => $"{current}, {next}");
-            string columnList2 = dc2All.Select(dc => dc.ColumnName).Aggregate((current, next) => $"{current}, {next}");
-
-            string insertInto1 = $"INSERT INTO {dbName1}.{schema}.{table}({columnList1})";
-            string insertInto2 = $"INSERT INTO {dbName2}.{schema}.{table}({columnList2})";
-
-            //TODO: sort results so that all the lines for a given ID are together
+            string columnList1 = SeparateWithCommas(dc1All.Select(dc => dc.ColumnName));
+            string columnList2 = SeparateWithCommas(dc2All.Select(dc => dc.ColumnName));
 
             List<DataRow> rowsIn1ButNot2 = dataRows1.Except(dataRows2, new DataRowIDComparer()).ToList();
-
-            results.AddRange(rowsIn1ButNot2.Select(d => $"SELECT * FROM {schema}.{table} WHERE {idName} = {(int)d.ItemArray[0]} --in {friendlyName1} but not in {friendlyName2}."));
-
-            //generate a script to insert the record into database2
-            results.AddRange(rowsIn1ButNot2.Select(r => r.ItemArray.Select(i => i.ToString())
-                                                        .Aggregate((current, next) => $"{current}, '{next}'"))
-                                            .Select(values => $"--{identityOn} {insertInto2} VALUES({values}) {identityOff} --Insert into {friendlyName2}"));
-
-            //generate a script to delete the record from database1
-            results.AddRange(rowsIn1ButNot2.Select(r => $"--DELETE FROM {dbName1}.{schema}.{table} WHERE {idName} = {(int)r.ItemArray[0]} --Delete from {friendlyName1}"));
+            results.AddRange(rowsIn1ButNot2.Select(d => GetSelectByID(d, schema, table, friendlyName1, friendlyName2, idName)));
+            results.AddRange(rowsIn1ButNot2.Select(v => GetInsertScriptByID(v, dbName2, schema, table, friendlyName2, columnList2))); //insert into db2
+            results.AddRange(rowsIn1ButNot2.Select(r => GetDeleteScriptByID(r, dbName1, schema, table, friendlyName1, idName))); //delete from db1
 
             List<DataRow> rowsIn2ButNot1 = dataRows2.Except(dataRows1, new DataRowIDComparer()).ToList();
+            results.AddRange(rowsIn2ButNot1.Select(d => GetSelectByID(d, schema, table, friendlyName2, friendlyName1, idName)));
+            results.AddRange(rowsIn2ButNot1.Select(v => GetInsertScriptByID(v, dbName1, schema, table, friendlyName1, columnList1))); //insert into db1
+            results.AddRange(rowsIn2ButNot1.Select(r => GetDeleteScriptByID(r, dbName2, schema, table, friendlyName2, idName))); //delete from db2
 
-            results.AddRange(rowsIn2ButNot1.Select(d => $"SELECT * FROM {schema}.{table} WHERE {idName} = {(int)d.ItemArray[0]} --in {friendlyName2} but not in {friendlyName1}."));
-
-            //generate a script to insert the record into database1
-            results.AddRange(rowsIn2ButNot1.Select(r => r.ItemArray.Select(i => i.ToString())
-                                                        .Aggregate((current, next) => $"{current}, '{next}'"))
-                                            .Select(values => $"--{identityOn} {insertInto1} VALUES({values}) {identityOff} --Insert into {friendlyName1}"));
-
-            //generate a script to delete the record from database2
-            results.AddRange(rowsIn2ButNot1.Select(r => $"--DELETE FROM {dbName2}.{schema}.{table} WHERE {idName} = {(int)r.ItemArray[0]} --Delete from {friendlyName2}"));
-
-            return results;
+            return results.OrderBy(r => r.ID).Select(r => r.Script).ToList();
         }
 
         private static List<string> GetDifferencesForSameIDs(string schemaName, string tableName, List<DataColumn> dataColumns,
