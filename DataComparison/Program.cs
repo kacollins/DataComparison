@@ -372,7 +372,7 @@ namespace DataComparison
                 List<string> differencesInIDs = GetDifferencesInIDs(schemaName, tableName, dr1, dr2, friendlyName1, friendlyName2, dc1All, dc2All, dbName1, dbName2);
 
                 dc1 = GetColumns(dt1, true).ToList();
-                List<string> differencesForSameIDs = GetDifferencesForSameIDs(schemaName, tableName, dc1, dr1, dr2, friendlyName1, friendlyName2);
+                List<string> differencesForSameIDs = GetDifferencesForSameIDs(schemaName, tableName, dc1, dr1, dr2, friendlyName1, friendlyName2, dbName1, dbName2);
 
                 List<string> results = validationWarnings.Union(differencesInIDs).Union(differencesForSameIDs).ToList();
 
@@ -409,7 +409,8 @@ namespace DataComparison
 
         private static List<string> GetDifferencesForSameIDs(string schemaName, string tableName, List<DataColumn> dataColumns,
                                                             List<DataRow> dataRows1, List<DataRow> dataRows2,
-                                                            string friendlyName1, string friendlyName2)
+                                                            string friendlyName1, string friendlyName2,
+                                                            string dbName1, string dbName2)
         {
             DisplayProgressMessage($"Checking for differences in {schemaName}.{tableName}...");
 
@@ -433,7 +434,7 @@ namespace DataComparison
 
             foreach (DataRow DR in RowsWithSameIDsButDifferentValues)
             {
-                results.AddRange(GetColumnsWithDifferences(schemaName, tableName, dataColumns, dataRows1, dataRows2, friendlyName1, friendlyName2, DR));
+                results.AddRange(GetColumnsWithDifferences(schemaName, tableName, dataColumns, dataRows1, dataRows2, friendlyName1, friendlyName2, DR, dbName1, dbName2));
             }
 
             return results;
@@ -441,7 +442,8 @@ namespace DataComparison
 
         private static List<string> GetColumnsWithDifferences(string schema, string table, List<DataColumn> dataColumns,
                                                             List<DataRow> dataRows1, List<DataRow> dataRows2,
-                                                            string friendlyName1, string friendlyName2, DataRow DR)
+                                                            string friendlyName1, string friendlyName2, DataRow DR,
+                                                            string dbName1, string dbName2)
         {
             DataRow DR1 = dataRows1.Single(dr1 => int.Parse(dr1.ItemArray[0].ToString()) == int.Parse(DR.ItemArray[0].ToString()));
             DataRow DR2 = dataRows2.Single(dr2 => int.Parse(dr2.ItemArray[0].ToString()) == int.Parse(DR.ItemArray[0].ToString()));
@@ -449,12 +451,13 @@ namespace DataComparison
             string idName = dataColumns.First().ColumnName;
 
             return dataColumns.Where(dc => !DR1[dc.ColumnName].Equals(DR2[dc.ColumnName]))
-                                .Select(dataColumn => GetColumnDifference(schema, table, friendlyName1, friendlyName2, dataColumn, DR1, DR2, idName))
+                                .Select(dataColumn => GetColumnDifference(schema, table, friendlyName1, friendlyName2, dataColumn, DR1, DR2, idName, dbName1, dbName2))
                                 .ToList();
         }
 
         private static string GetColumnDifference(string schema, string table, string friendlyName1, string friendlyName2,
-                                                    DataColumn dataColumn, DataRow DR1, DataRow DR2, string idName)
+                                                    DataColumn dataColumn, DataRow DR1, DataRow DR2, string idName,
+                                                    string dbName1, string dbName2)
         {
             string column = dataColumn.ColumnName;
             int ID = int.Parse(DR1.ItemArray[0].ToString());
@@ -462,8 +465,11 @@ namespace DataComparison
             string value1 = $"'{DR1[dataColumn.ColumnName]}'";
             string value2 = $"'{DR2[dataColumn.ColumnName]}'";
 
-            string result = $"SELECT * FROM {schema}.{table} WHERE {idName} = {ID} --{column} = {value1} in {friendlyName1} but {value2} in {friendlyName2}.";
-            return result;
+            string select = $"SELECT * FROM {schema}.{table} WHERE {idName} = {ID} --{column} = {value1} in {friendlyName1} but {value2} in {friendlyName2}.";
+            string update1 = $"--UPDATE {dbName1}.{schema}.{table} SET {column} = {value2} WHERE {idName} = {ID} --update {friendlyName1}.";
+            string update2 = $"--UPDATE {dbName2}.{schema}.{table} SET {column} = {value1} WHERE {idName} = {ID} --update {friendlyName2}.";
+
+            return $"{select}{Environment.NewLine}{update1}{Environment.NewLine}{update2}";
         }
 
         private static List<string> GetValidationErrors(string schema, string table, string idName,
