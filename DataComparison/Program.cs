@@ -29,21 +29,26 @@ namespace DataComparison
 
             CompareTables(tableFileName, databaseFileName);
 
-            //Console.WriteLine("Press enter to exit:");
-            //Console.Read();
+            Console.WriteLine("Press enter to exit:");
+            Console.Read();
         }
 
         #region Methods
 
         private static void CompareTables(string tableFileName, string databaseFileName)
         {
-            List<Table> tablesToCompare = GetTablesToCompare(tableFileName);
+            TableFileResult result = GetTablesToCompare(tableFileName);
 
-            if (tablesToCompare.Any())
+            if (result.Tables.Any())
             {
-                CompareDatabasePairs(databaseFileName, tablesToCompare);
+                CompareDatabasePairs(databaseFileName, result.Tables);
             }
-            else
+
+            if (result.Errors.Any())
+            {
+                HandleTopLevelError(AppendLines(result.Errors), false);
+            }
+            else if (!result.Tables.Any())
             {
                 HandleTopLevelError("No tables to compare!");
             }
@@ -69,13 +74,17 @@ namespace DataComparison
             }
         }
 
-        private static void HandleTopLevelError(string errorMessage)
+        private static void HandleTopLevelError(string errorMessage, bool writeToConsole = true)
         {
-            Console.WriteLine(errorMessage);
-            WriteToFile($"{DateForFileName}_Error", errorMessage);
+            if (writeToConsole)
+            {
+                Console.WriteLine(errorMessage);
+            }
+
+            WriteToFile($"{DateForFileName}_Error", errorMessage, OutputFileExtension.txt);
         }
 
-        private static List<Table> GetTablesToCompare(string fileName)
+        private static TableFileResult GetTablesToCompare(string fileName)
         {
             if (string.IsNullOrWhiteSpace(fileName))
             {
@@ -84,29 +93,24 @@ namespace DataComparison
 
             List<string> lines = GetFileLines(fileName);
 
-            List<Table> tablesToCompare = new List<Table>();
+            List<Table> tablesToCompare = lines.Where(line => line.Split('.').Length == Enum.GetValues(typeof(TablePart)).Length)
+                                                .Select(validLine => validLine.Split('.'))
+                                                .Select(parts => new Table(parts[(int)TablePart.SchemaName],
+                                                                            parts[(int)TablePart.TableName]))
+                                                .ToList();
 
-            foreach (string[] parts in lines.Select(line => line.Split('.')))
+            List<string> errorMessages = lines.Where(line => line.Split('.').Length != Enum.GetValues(typeof(TablePart)).Length)
+                                                .Select(invalidLine => $"Invalid schema/table format: {invalidLine}")
+                                                .ToList();
+
+            if (errorMessages.Any())
             {
-                if (parts.Length == Enum.GetValues(typeof(TablePart)).Length)
-                {
-                    tablesToCompare.Add(new Table(parts[(int)TablePart.SchemaName],
-                                                parts[(int)TablePart.TableName]));
-                }
-                else
-                {
-                    //TODO: List invalid lines in output file and only show this message on the screen once
-                    Console.WriteLine($"Error: Invalid schema/table format in {InputFile.TablesToCompare} file.");
-                }
+                Console.WriteLine($"Error: Invalid schema/table format in {InputFile.TablesToCompare} file.");
             }
 
-            //Call SP in LINQPad
-            //List<Table> tablesToCompare = usp_GetLookups().Tables[0].AsEnumerable()
-            //                                        .Select(dr => new Table(dr["SchemaName"].ToString(),
-            //                                                                dr["TableName"].ToString()))
-            //                                        .ToList();
+            TableFileResult result = new TableFileResult(tablesToCompare, errorMessages);
 
-            return tablesToCompare;
+            return result;
         }
 
         private static List<DatabasePair> GetDatabasePairs(string fileName)
@@ -186,11 +190,11 @@ namespace DataComparison
                 string fileName = $"{DateForFileName}_{friendlyName1}_{friendlyName2}";
                 string fileContents = AppendLines(results);
 
-                WriteToFile(fileName, fileContents);
+                WriteToFile(fileName, fileContents, OutputFileExtension.sql);
             }
         }
 
-        private static void WriteToFile(string fileName, string fileContents)
+        private static void WriteToFile(string fileName, string fileContents, OutputFileExtension fileExtension)
         {
             const char backSlash = '\\';
             string directory = $"{CurrentDirectory}{backSlash}Results";
@@ -200,7 +204,7 @@ namespace DataComparison
                 Directory.CreateDirectory(directory);
             }
 
-            string filePath = $"{directory}{backSlash}{fileName}.sql";
+            string filePath = $"{directory}{backSlash}{fileName}.{fileExtension}";
 
             if (File.Exists(filePath))
             {
@@ -618,6 +622,18 @@ namespace DataComparison
             }
         }
 
+        private class TableFileResult
+        {
+            public List<Table> Tables { get; }
+            public List<string> Errors { get; }
+
+            public TableFileResult(List<Table> tables, List<string> errors)
+            {
+                Tables = tables;
+                Errors = errors;
+            }
+        }
+
         private class ScriptForID
         {
             public int ID { get; }
@@ -699,6 +715,12 @@ namespace DataComparison
         {
             TablesToCompare,
             DatabasePairs
+        }
+
+        private enum OutputFileExtension
+        {
+            sql,
+            txt
         }
 
         #endregion
