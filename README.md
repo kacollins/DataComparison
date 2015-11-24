@@ -4,7 +4,7 @@ The goal is to schedule a task to run the app daily to catch changes made by use
 
 The comparison works for views too!
 
-Create these two text files and put them in the bin\Debug folder:
+Create these two text files and put them in a folder called Inputs under bin\Debug:
 * TablesToCompare.supersecret
     * list of tables and views to compare
     * one table or view per line
@@ -23,7 +23,7 @@ Create these two text files and put them in the bin\Debug folder:
         * name of second database
     * example: Dev,DevServerName,DevDBName,Test,TestServerName,TestDBName
 
-The results will go in a folder called Results under bin\Debug, with one file per database pair per day.
+The results will go in a folder called Outputs under bin\Debug, with one file per database pair per day.
 
 When scheduling the task, put the location of the bin\Debug folder in the "Start in (optional)" field.
 
