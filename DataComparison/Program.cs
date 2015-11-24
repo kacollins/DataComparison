@@ -552,6 +552,43 @@ namespace DataComparison
             Console.WriteLine(Message);
         }
 
+        private static string AppendLines(IEnumerable<string> input)
+        {
+            return input.Aggregate(new StringBuilder(), (current, next) => current.AppendLine(next)).ToString();
+        }
+
+        private static string SeparateWithCommas(IEnumerable<string> input)
+        {
+            return input.Aggregate((current, next) => $"{current}, {next}");
+        }
+
+        private static ScriptForID GetSelectByID(DataRow dr, string schema, string table, string friendlyNameIn, string friendlyNameNotIn, string idName)
+        {
+            int id = (int)dr.ItemArray[0];
+            string select = $"SELECT * FROM {schema}.{table}";
+
+            return new ScriptForID(id, $"{select} WHERE {idName} = {id} --in {friendlyNameIn} but not in {friendlyNameNotIn}.");
+        }
+
+        private static ScriptForID GetInsertScriptByID(DataRow dr, string dbName, string schema, string table, string friendlyName, string columnList)
+        {
+            int id = (int)dr.ItemArray[0];
+            string identityOn = $"SET IDENTITY_INSERT {schema}.{table} ON";
+            string insertInto = $"INSERT INTO {dbName}.{schema}.{table}({columnList}";
+            string identityOff = $"SET IDENTITY_INSERT {schema}.{table} OFF";
+            string values = dr.ItemArray.Select(i => i.ToString())
+                                .Aggregate((current, next) => $"{current}, '{next}'");
+
+            return new ScriptForID(id, $"--{identityOn} {insertInto} VALUES({values}) {identityOff} --Insert into {friendlyName}");
+        }
+
+        private static ScriptForID GetDeleteScriptByID(DataRow dr, string dbName, string schema, string table, string friendlyName, string idName)
+        {
+            int id = (int)dr.ItemArray[0];
+
+            return new ScriptForID(id, $"--DELETE FROM {dbName}.{schema}.{table} WHERE {idName} = {id} --Delete from {friendlyName}");
+        }
+
         #endregion
 
         #region Properties
@@ -600,6 +637,18 @@ namespace DataComparison
             {
                 SchemaName = schemaName;
                 TableName = tableName;
+            }
+        }
+
+        private class ScriptForID
+        {
+            public int ID { get; }
+            public string Script { get; }
+
+            public ScriptForID(int id, string script)
+            {
+                ID = id;
+                Script = script;
             }
         }
 
