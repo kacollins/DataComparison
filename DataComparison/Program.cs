@@ -155,7 +155,8 @@ namespace DataComparison
 
         private static List<string> GetFileLines(string fileName)
         {
-            DirectoryInfo directoryInfo = new DirectoryInfo(CurrentDirectory);
+            const char backSlash = '\\';
+            DirectoryInfo directoryInfo = new DirectoryInfo($"{CurrentDirectory}{backSlash}{Folder.Inputs}");
             FileInfo file = directoryInfo.GetFiles(fileName).FirstOrDefault();
 
             if (file == null)
@@ -206,7 +207,7 @@ namespace DataComparison
         private static void WriteToFile(string fileName, string fileContents, OutputFileExtension fileExtension)
         {
             const char backSlash = '\\';
-            string directory = $"{CurrentDirectory}{backSlash}Results";
+            string directory = $"{CurrentDirectory}{backSlash}{Folder.Outputs}";
 
             if (!Directory.Exists(directory))
             {
@@ -564,8 +565,9 @@ namespace DataComparison
         private static ScriptForID GetInsertScriptByID(DataRow dr, string dbName, string schema, string table, string friendlyName, string columnList)
         {
             int id = (int)dr.ItemArray[0];
+            //TODO: Handle tables without identity
             string identityOn = $"SET IDENTITY_INSERT {schema}.{table} ON";
-            string insertInto = $"INSERT INTO {dbName}.{schema}.{table}({columnList}";
+            string insertInto = $"INSERT INTO {dbName}.{schema}.{table}({columnList})";
             string identityOff = $"SET IDENTITY_INSERT {schema}.{table} OFF";
             string values = dr.ItemArray.Select(i => i.ToString())
                                 .Aggregate((current, next) => $"{current}, '{next}'");
@@ -742,6 +744,12 @@ namespace DataComparison
         {
             sql,
             txt
+        }
+
+        private enum Folder
+        {
+            Inputs,
+            Outputs
         }
 
         #endregion
