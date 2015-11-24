@@ -166,7 +166,10 @@ namespace DataComparison
             else
             {
                 List<string> lines = File.ReadAllLines(file.FullName)
-                                        .Where(line => !string.IsNullOrWhiteSpace(line))
+                                        .Where(line => !string.IsNullOrWhiteSpace(line)
+                                                        && !line.StartsWith("--")
+                                                        && !line.StartsWith("//")
+                                                        && !line.StartsWith("'"))
                                         .ToList();
                 return lines;
             }
