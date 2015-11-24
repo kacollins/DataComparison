@@ -56,11 +56,11 @@ namespace DataComparison
 
         private static void CompareDatabasePairs(string databaseFileName, List<Table> tablesToCompare)
         {
-            List<DatabasePair> databasePairs = GetDatabasePairs(databaseFileName);
+            DatabaseFileResult result = GetDatabasePairs(databaseFileName);
 
-            if (databasePairs.Any())
+            if (result.DatabasePairs.Any())
             {
-                foreach (DatabasePair dbPair in databasePairs)
+                foreach (DatabasePair dbPair in result.DatabasePairs)
                 {
                     DisplayProgressMessage($"Comparing {dbPair.Database1.FriendlyName} to {dbPair.Database2.FriendlyName}...");
                     CompareDatabasePair(tablesToCompare, dbPair);
@@ -68,7 +68,12 @@ namespace DataComparison
 
                 Console.WriteLine("Done!");
             }
-            else
+
+            if (result.Errors.Any())
+            {
+                HandleTopLevelError(AppendLines(result.Errors), false);
+            }
+            else if (!result.DatabasePairs.Any())
             {
                 HandleTopLevelError("No databases to compare!");
             }
@@ -92,14 +97,15 @@ namespace DataComparison
             }
 
             List<string> lines = GetFileLines(fileName);
+            const char separator = '.';
 
-            List<Table> tablesToCompare = lines.Where(line => line.Split('.').Length == Enum.GetValues(typeof(TablePart)).Length)
-                                                .Select(validLine => validLine.Split('.'))
+            List<Table> tablesToCompare = lines.Where(line => line.Split(separator).Length == Enum.GetValues(typeof(TablePart)).Length)
+                                                .Select(validLine => validLine.Split(separator))
                                                 .Select(parts => new Table(parts[(int)TablePart.SchemaName],
                                                                             parts[(int)TablePart.TableName]))
                                                 .ToList();
 
-            List<string> errorMessages = lines.Where(line => line.Split('.').Length != Enum.GetValues(typeof(TablePart)).Length)
+            List<string> errorMessages = lines.Where(line => line.Split(separator).Length != Enum.GetValues(typeof(TablePart)).Length)
                                                 .Select(invalidLine => $"Invalid schema/table format: {invalidLine}")
                                                 .ToList();
 
@@ -113,35 +119,38 @@ namespace DataComparison
             return result;
         }
 
-        private static List<DatabasePair> GetDatabasePairs(string fileName)
+        private static DatabaseFileResult GetDatabasePairs(string fileName)
         {
             if (string.IsNullOrWhiteSpace(fileName))
             {
                 fileName = $"{InputFile.DatabasePairs}.supersecret";
             }
 
-            List<DatabasePair> databasePairs = new List<DatabasePair>();
             List<string> lines = GetFileLines(fileName);
+            const char separator = ',';
 
-            foreach (string[] parts in lines.Select(line => line.Split(',')))
+            List<DatabasePair> databasePairs = lines.Where(line => line.Split(separator).Length == Enum.GetValues(typeof(DatabasePairPart)).Length)
+                                                    .Select(validLine => validLine.Split(separator))
+                                                    .Select(parts => new DatabasePair(new Database(parts[(int)DatabasePairPart.FriendlyName1],
+                                                                                                    parts[(int)DatabasePairPart.ServerName1],
+                                                                                                    parts[(int)DatabasePairPart.DatabaseName1]),
+                                                                                        new Database(parts[(int)DatabasePairPart.FriendlyName2],
+                                                                                                    parts[(int)DatabasePairPart.ServerName2],
+                                                                                                    parts[(int)DatabasePairPart.DatabaseName2])))
+                                                    .ToList();
+
+            List<string> errorMessages = lines.Where(line => line.Split(separator).Length != Enum.GetValues(typeof(DatabasePairPart)).Length)
+                                                .Select(invalidLine => $"Invalid database pair format: {invalidLine}")
+                                                .ToList();
+
+            if (errorMessages.Any())
             {
-                if (parts.Length == Enum.GetValues(typeof(DatabasePairPart)).Length)
-                {
-                    databasePairs.Add(new DatabasePair(new Database(parts[(int)DatabasePairPart.FriendlyName1],
-                                                                    parts[(int)DatabasePairPart.ServerName1],
-                                                                    parts[(int)DatabasePairPart.DatabaseName1]),
-                                                        new Database(parts[(int)DatabasePairPart.FriendlyName2],
-                                                                    parts[(int)DatabasePairPart.ServerName2],
-                                                                    parts[(int)DatabasePairPart.DatabaseName2])));
-                }
-                else
-                {
-                    //TODO: List invalid lines in output file and only show this message on the screen once
-                    Console.WriteLine($"Error: Invalid database pair format in {InputFile.DatabasePairs} file.");
-                }
+                Console.WriteLine($"Error: Invalid database pair format in {InputFile.DatabasePairs} file.");
             }
 
-            return databasePairs;
+            DatabaseFileResult result = new DatabaseFileResult(databasePairs, errorMessages);
+
+            return result;
         }
 
         private static List<string> GetFileLines(string fileName)
@@ -630,6 +639,18 @@ namespace DataComparison
             public TableFileResult(List<Table> tables, List<string> errors)
             {
                 Tables = tables;
+                Errors = errors;
+            }
+        }
+
+        private class DatabaseFileResult
+        {
+            public List<DatabasePair> DatabasePairs { get; }
+            public List<string> Errors { get; }
+
+            public DatabaseFileResult(List<DatabasePair> databasePairs, List<string> errors)
+            {
+                DatabasePairs = databasePairs;
                 Errors = errors;
             }
         }
