@@ -184,7 +184,7 @@ namespace DataComparison
             if (results.Any())
             {
                 string fileName = $"{DateForFileName}_{friendlyName1}_{friendlyName2}";
-                string fileContents = results.Aggregate(new StringBuilder(), (current, next) => current.AppendLine(next)).ToString();
+                string fileContents = AppendLines(results);
 
                 WriteToFile(fileName, fileContents);
             }
@@ -200,7 +200,7 @@ namespace DataComparison
                 Directory.CreateDirectory(directory);
             }
 
-            string filePath = $"{directory}{backSlash}{fileName}.txt";
+            string filePath = $"{directory}{backSlash}{fileName}.sql";
 
             if (File.Exists(filePath))
             {
@@ -511,7 +511,7 @@ namespace DataComparison
 
             if (differentDataTypes.Any())
             {
-                string columnsWithDifferentDataTypes = differentDataTypes.Aggregate((current, next) => $"{current}, {next}");
+                string columnsWithDifferentDataTypes = SeparateWithCommas(differentDataTypes);
                 string plural = columnsWithDifferentDataTypes.Length == 1 ? "" : "s";
                 result = $"{schema}.{table} --Column{plural} with different data type{plural}: {columnsWithDifferentDataTypes}";
             }
