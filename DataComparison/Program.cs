@@ -294,11 +294,6 @@ namespace DataComparison
             {
                 Conn.Open();
                 SDA.Fill(DT);
-                Conn.Close();
-            }
-            catch (Exception)
-            {
-                throw;
             }
             finally
             {
@@ -453,7 +448,8 @@ namespace DataComparison
 
             foreach (DataRow DR in RowsWithSameIDsButDifferentValues)
             {
-                results.AddRange(GetColumnsWithDifferences(schemaName, tableName, dataColumns, dataRows1, dataRows2, friendlyName1, friendlyName2, DR, dbName1, dbName2));
+                results.AddRange(GetColumnsWithDifferences(schemaName, tableName, dataColumns, dataRows1, dataRows2, 
+                                                            friendlyName1, friendlyName2, DR, dbName1, dbName2));
             }
 
             return results;
@@ -470,7 +466,8 @@ namespace DataComparison
             string idName = dataColumns.First().ColumnName;
 
             return dataColumns.Where(dc => !DR1[dc.ColumnName].Equals(DR2[dc.ColumnName]))
-                                .Select(dataColumn => GetColumnDifference(schema, table, friendlyName1, friendlyName2, dataColumn, DR1, DR2, idName, dbName1, dbName2))
+                                .Select(dataColumn => GetColumnDifference(schema, table, friendlyName1, friendlyName2, 
+                                                                            dataColumn, DR1, DR2, idName, dbName1, dbName2))
                                 .ToList();
         }
 
@@ -502,9 +499,9 @@ namespace DataComparison
             //Make sure ID is an int
             int output;
             results.AddRange(dataRows1.Where(r => !int.TryParse(r.ItemArray[0].ToString(), out output))
-                                        .Select(d => $"SELECT * FROM {schema}.{table} WHERE {idName} = '{d.ItemArray[0]}' --ID is not an int in {friendlyName1} (table not compared)"));
+                                .Select(d => $"SELECT * FROM {schema}.{table} WHERE {idName} = '{d.ItemArray[0]}' --ID is not an int in {friendlyName1} (table not compared)"));
             results.AddRange(dataRows2.Where(r => !int.TryParse(r.ItemArray[0].ToString(), out output))
-                                        .Select(d => $"SELECT * FROM {schema}.{table} WHERE {idName} = '{d.ItemArray[0]}' --ID is not an int in {friendlyName2} (table not compared)"));
+                                .Select(d => $"SELECT * FROM {schema}.{table} WHERE {idName} = '{d.ItemArray[0]}' --ID is not an int in {friendlyName2} (table not compared)"));
 
             //Check for duplicate ID values
             results.AddRange(dataRows1.GroupBy(r => r.ItemArray[0]).Where(g => g.Count() > 1)
@@ -681,18 +678,6 @@ namespace DataComparison
             public DatabaseFileResult(List<DatabasePair> databasePairs, List<string> errors)
             {
                 DatabasePairs = databasePairs;
-                Errors = errors;
-            }
-        }
-
-        private class ColumnFileResult
-        {
-            public List<string> Columns { get; }
-            public List<string> Errors { get; }
-
-            public ColumnFileResult(List<string> columns, List<string> errors)
-            {
-                Columns = columns;
                 Errors = errors;
             }
         }
