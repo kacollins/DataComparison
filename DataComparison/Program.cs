@@ -10,12 +10,15 @@ namespace DataComparison
 {
     class Program
     {
+        public static List<string> ColumnsToIgnore { get; private set; }
+
         static void Main(string[] args)
         {
             //TODO: add argument for whether this is being run manually vs automated?
 
             string tableFileName = string.Empty;
             string databaseFileName = string.Empty;
+            string columnFileName = string.Empty;
 
             if (args.Length > (int)InputFile.TablesToCompare)
             {
@@ -24,9 +27,15 @@ namespace DataComparison
                 if (args.Length > (int)InputFile.DatabasePairs)
                 {
                     databaseFileName = args[(int)InputFile.DatabasePairs];
+
+                    if (args.Length > (int)InputFile.ColumnsToIgnore)
+                    {
+                        columnFileName = args[(int)InputFile.ColumnsToIgnore];
+                    }
                 }
             }
 
+            GetColumnsToIgnore(columnFileName);
             CompareTables(tableFileName, databaseFileName);
 
             Console.WriteLine("Press enter to exit:");
@@ -299,18 +308,30 @@ namespace DataComparison
             return DT;
         }
 
-        private static List<string> GetColumnsToIgnore()
+        private static void GetColumnsToIgnore(string fileName)
         {
-            //TODO: Read from file?
-
-            return new List<string>()
+            if (string.IsNullOrWhiteSpace(fileName))
             {
-                "UserCreated",
-                "DateCreated",
-                "UserModified",
-                "DateModified",
-                "SpatialLocation" //Comparison of geography data type from SQL appears to always return false
-            };
+                fileName = $"{InputFile.ColumnsToIgnore}.supersecret";
+            }
+
+            List<string> lines = GetFileLines(fileName);
+
+            if (lines.Any())
+            {
+                ColumnsToIgnore = lines;
+            }
+            else
+            {
+                ColumnsToIgnore = new List<string>()
+                {
+                    "UserCreated",
+                    "DateCreated",
+                    "UserModified",
+                    "DateModified",
+                    "SpatialLocation" //Comparison of geography data type from SQL appears to always return false
+                };
+            }
         }
 
         private static List<DataColumn> GetColumns(DataTable DT, bool excludeColumnsToIgnore)
@@ -319,9 +340,7 @@ namespace DataComparison
 
             if (excludeColumnsToIgnore)
             {
-                List<string> columnsToIgnore = GetColumnsToIgnore();
-
-                columns = columns.Where(dc => !columnsToIgnore.Contains(dc.ColumnName)).ToList();
+                columns = columns.Where(dc => !ColumnsToIgnore.Contains(dc.ColumnName)).ToList();
             }
 
             return columns;
@@ -666,6 +685,18 @@ namespace DataComparison
             }
         }
 
+        private class ColumnFileResult
+        {
+            public List<string> Columns { get; }
+            public List<string> Errors { get; }
+
+            public ColumnFileResult(List<string> columns, List<string> errors)
+            {
+                Columns = columns;
+                Errors = errors;
+            }
+        }
+
         private class ScriptForID
         {
             public int ID { get; }
@@ -746,7 +777,8 @@ namespace DataComparison
         private enum InputFile
         {
             TablesToCompare,
-            DatabasePairs
+            DatabasePairs,
+            ColumnsToIgnore
         }
 
         private enum OutputFileExtension
