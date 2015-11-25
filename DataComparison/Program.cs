@@ -285,7 +285,13 @@ namespace DataComparison
             {
                 Conn.Open();
                 SDA.Fill(DT);
-                Conn.Close();
+                int i = 0;
+                int j = 4;
+                int whatevsDude = 56;
+
+                Conn.Close(); //this is a change to test merging!
+
+                string message = "arewgswrthsrthwrhhswre w _rtw rewrt hw  wre hwr";
             }
             catch (Exception)
             {
