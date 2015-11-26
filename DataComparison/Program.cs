@@ -492,37 +492,56 @@ namespace DataComparison
             string value1 = $"'{DR1[dataColumn.ColumnName]}'";
             string value2 = $"'{DR2[dataColumn.ColumnName]}'";
 
+            string select = GetSelectForUpdate(schema, table, friendlyName1, friendlyName2, idName, dbName1, dbName2, ID, column, value1, value2);
+
+            string update1 = GetUpdateScript(schema, table, friendlyName1, friendlyName2, idName, dbName1, column, value2, ID);
+            string update2 = GetUpdateScript(schema, table, friendlyName2, friendlyName1, idName, dbName2, column, value1, ID);
+
+            return $@"{Environment.NewLine}{select}{
+                        Environment.NewLine}{update1}{
+                        Environment.NewLine}{update2}";
+        }
+
+        private static string GetSelectForUpdate(string schema, string table, string friendlyName1, string friendlyName2,
+                                                string idName, string dbName1, string dbName2, int ID, 
+                                                string column, string value1, string value2)
+        {
+            string select;
             string select1 = $"SELECT * FROM {dbName1}.{schema}.{table} WHERE {idName} = {ID}";
             string select2 = $"SELECT * FROM {dbName2}.{schema}.{table} WHERE {idName} = {ID}";
-            string select = select1;
 
-            if (select1 != select2)
+            if (select1 == select2)
             {
-                select = $"{select1} --{friendlyName1}{Environment.NewLine}{select2} --{friendlyName2}";
+                select = select1;
+            }
+            else
+            {
+                select = $@"{select1} --{friendlyName1}{Environment.NewLine}{
+                            select2} --{friendlyName2}";
             }
 
             string valueComment1 = $"--{column} = {value1} in {friendlyName1}";
             string valueComment2 = $"--{column} = {value2} in {friendlyName2}";
-            string updateComment1 = $"--Execute this script against {friendlyName1} to update it to match {friendlyName2}:";
-            string update1 = $@"/*{
-                Environment.NewLine}UPDATE {dbName1}.{schema}.{table}{
-                Environment.NewLine}SET {column} = {value2}{
-                Environment.NewLine}WHERE {idName} = {ID}{
-                Environment.NewLine}*/";
-            string updateComment2 = $"--Execute this script against {friendlyName2} to update it to match {friendlyName1}:";
-            string update2 = $@"/*{
-                Environment.NewLine}UPDATE {dbName2}.{schema}.{table}{
-                Environment.NewLine}SET {column} = {value1}{
+
+            select = $@"{select}{Environment.NewLine}{
+                valueComment1}{Environment.NewLine}{
+                valueComment2}";
+
+            return select;
+        }
+
+        private static string GetUpdateScript(string schema, string table, string friendlyNameDest, string friendlyNameSource,
+                                                string idName, string dbNameDest, string column, string valueSource, int ID)
+        {
+            string updateComment = $"--Execute this script against {friendlyNameDest} to update it to match {friendlyNameSource}:";
+
+            string update = $@"{updateComment}{Environment.NewLine}/*{
+                Environment.NewLine}UPDATE {dbNameDest}.{schema}.{table}{
+                Environment.NewLine}SET {column} = {valueSource}{
                 Environment.NewLine}WHERE {idName} = {ID}{
                 Environment.NewLine}*/";
 
-            return $@"{Environment.NewLine}{select}{
-                        Environment.NewLine}{valueComment1}{
-                        Environment.NewLine}{valueComment2}{
-                        Environment.NewLine}{updateComment1}{
-                        Environment.NewLine}{update1}{
-                        Environment.NewLine}{updateComment2}{
-                        Environment.NewLine}{update2}";
+            return update;
         }
 
         private static List<string> GetValidationErrors(string schema, string table, string idName,
