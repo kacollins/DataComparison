@@ -164,24 +164,35 @@ namespace DataComparison
 
         private static List<string> GetFileLines(string fileName)
         {
+            List<string> fileLines = new List<string>();
+
             const char backSlash = '\\';
             DirectoryInfo directoryInfo = new DirectoryInfo($"{CurrentDirectory}{backSlash}{Folder.Inputs}");
-            FileInfo file = directoryInfo.GetFiles(fileName).FirstOrDefault();
 
-            if (file == null)
+            if (directoryInfo.Exists)
             {
-                return new List<string>();
+                FileInfo file = directoryInfo.GetFiles(fileName).FirstOrDefault();
+
+                if (file == null)
+                {
+                    Console.WriteLine($"File does not exist: {directoryInfo.FullName}{backSlash}{fileName}");
+                }
+                else
+                {
+                    fileLines = File.ReadAllLines(file.FullName)
+                                            .Where(line => !string.IsNullOrWhiteSpace(line)
+                                                            && !line.StartsWith("--")
+                                                            && !line.StartsWith("//")
+                                                            && !line.StartsWith("'"))
+                                            .ToList();
+                }
             }
             else
             {
-                List<string> lines = File.ReadAllLines(file.FullName)
-                                        .Where(line => !string.IsNullOrWhiteSpace(line)
-                                                        && !line.StartsWith("--")
-                                                        && !line.StartsWith("//")
-                                                        && !line.StartsWith("'"))
-                                        .ToList();
-                return lines;
+                Console.WriteLine($"Directory does not exist: {directoryInfo.FullName}");
             }
+
+            return fileLines;
         }
 
         private static void CompareDatabasePair(List<Table> tablesToCompare, DatabasePair databasePair)
@@ -448,7 +459,7 @@ namespace DataComparison
 
             foreach (DataRow DR in RowsWithSameIDsButDifferentValues)
             {
-                results.AddRange(GetColumnsWithDifferences(schemaName, tableName, dataColumns, dataRows1, dataRows2, 
+                results.AddRange(GetColumnsWithDifferences(schemaName, tableName, dataColumns, dataRows1, dataRows2,
                                                             friendlyName1, friendlyName2, DR, dbName1, dbName2));
             }
 
@@ -466,7 +477,7 @@ namespace DataComparison
             string idName = dataColumns.First().ColumnName;
 
             return dataColumns.Where(dc => !DR1[dc.ColumnName].Equals(DR2[dc.ColumnName]))
-                                .Select(dataColumn => GetColumnDifference(schema, table, friendlyName1, friendlyName2, 
+                                .Select(dataColumn => GetColumnDifference(schema, table, friendlyName1, friendlyName2,
                                                                             dataColumn, DR1, DR2, idName, dbName1, dbName2))
                                 .ToList();
         }
@@ -481,11 +492,56 @@ namespace DataComparison
             string value1 = $"'{DR1[dataColumn.ColumnName]}'";
             string value2 = $"'{DR2[dataColumn.ColumnName]}'";
 
-            string select = $"SELECT * FROM {schema}.{table} WHERE {idName} = {ID} --{column} = {value1} in {friendlyName1} but {value2} in {friendlyName2}.";
-            string update1 = $"--UPDATE {dbName1}.{schema}.{table} SET {column} = {value2} WHERE {idName} = {ID} --update {friendlyName1}.";
-            string update2 = $"--UPDATE {dbName2}.{schema}.{table} SET {column} = {value1} WHERE {idName} = {ID} --update {friendlyName2}.";
+            string select = GetSelectForUpdate(schema, table, friendlyName1, friendlyName2, idName, dbName1, dbName2, ID, column, value1, value2);
 
-            return $"{select}{Environment.NewLine}{update1}{Environment.NewLine}{update2}";
+            string update1 = GetUpdateScript(schema, table, friendlyName1, friendlyName2, idName, dbName1, column, value2, ID);
+            string update2 = GetUpdateScript(schema, table, friendlyName2, friendlyName1, idName, dbName2, column, value1, ID);
+
+            return $@"{Environment.NewLine}{select}{
+                        Environment.NewLine}{update1}{
+                        Environment.NewLine}{update2}";
+        }
+
+        private static string GetSelectForUpdate(string schema, string table, string friendlyName1, string friendlyName2,
+                                                string idName, string dbName1, string dbName2, int ID,
+                                                string column, string value1, string value2)
+        {
+            string select;
+            string select1 = $"SELECT * FROM {dbName1}.{schema}.{table} WHERE {idName} = {ID}";
+            string select2 = $"SELECT * FROM {dbName2}.{schema}.{table} WHERE {idName} = {ID}";
+
+            if (select1 == select2)
+            {
+                select = select1;
+            }
+            else
+            {
+                select = $@"{select1} --{friendlyName1}{Environment.NewLine}{
+                            select2} --{friendlyName2}";
+            }
+
+            string valueComment1 = $"--{column} = {value1} in {friendlyName1}";
+            string valueComment2 = $"--{column} = {value2} in {friendlyName2}";
+
+            select = $@"{select}{Environment.NewLine}{
+                valueComment1}{Environment.NewLine}{
+                valueComment2}";
+
+            return select;
+        }
+
+        private static string GetUpdateScript(string schema, string table, string friendlyNameDest, string friendlyNameSource,
+                                                string idName, string dbNameDest, string column, string valueSource, int ID)
+        {
+            string updateComment = $"--Execute this script against {friendlyNameDest} to update it to match {friendlyNameSource}:";
+
+            string update = $@"{updateComment}{Environment.NewLine}/*{
+                Environment.NewLine}UPDATE {dbNameDest}.{schema}.{table}{
+                Environment.NewLine}SET {column} = {valueSource}{
+                Environment.NewLine}WHERE {idName} = {ID}{
+                Environment.NewLine}*/";
+
+            return update;
         }
 
         private static List<string> GetValidationErrors(string schema, string table, string idName,
@@ -579,9 +635,14 @@ namespace DataComparison
             return input.Aggregate((current, next) => $"{current}, {next}");
         }
 
+        private static int GetID(DataRow dr)
+        {
+            return int.Parse(dr.ItemArray[0].ToString());
+        }
+
         private static ScriptForID GetSelectByID(DataRow dr, string schema, string table, string friendlyNameIn, string friendlyNameNotIn, string idName)
         {
-            int id = (int)dr.ItemArray[0];
+            int id = GetID(dr);
             string select = $"SELECT * FROM {schema}.{table}";
 
             return new ScriptForID(id, $"{select} WHERE {idName} = {id} --in {friendlyNameIn} but not in {friendlyNameNotIn}.");
@@ -589,7 +650,7 @@ namespace DataComparison
 
         private static ScriptForID GetInsertScriptByID(DataRow dr, string dbName, string schema, string table, string friendlyName, string columnList)
         {
-            int id = (int)dr.ItemArray[0];
+            int id = GetID(dr);
             //TODO: Handle tables without identity
             string identityOn = $"SET IDENTITY_INSERT {schema}.{table} ON";
             string insertInto = $"INSERT INTO {dbName}.{schema}.{table}({columnList})";
@@ -602,7 +663,7 @@ namespace DataComparison
 
         private static ScriptForID GetDeleteScriptByID(DataRow dr, string dbName, string schema, string table, string friendlyName, string idName)
         {
-            int id = (int)dr.ItemArray[0];
+            int id = GetID(dr);
 
             return new ScriptForID(id, $"--DELETE FROM {dbName}.{schema}.{table} WHERE {idName} = {id} --Delete from {friendlyName}");
         }
