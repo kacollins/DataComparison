@@ -705,7 +705,7 @@ namespace DataComparison
 
             public bool Equals(DataRow DR1, DataRow DR2)
             {
-                return (int)DR1.ItemArray[0] == (int)DR2.ItemArray[0] && dataColumns.All(dc => DR2[dc.ColumnName].Equals(DR1[dc.ColumnName]));
+                return int.Parse(DR1.ItemArray[0].ToString()) == int.Parse(DR2.ItemArray[0].ToString()) && dataColumns.All(dc => DR2[dc.ColumnName].Equals(DR1[dc.ColumnName]));
             }
 
             public int GetHashCode(DataRow DR)
