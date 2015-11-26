@@ -459,7 +459,7 @@ namespace DataComparison
 
             foreach (DataRow DR in RowsWithSameIDsButDifferentValues)
             {
-                results.AddRange(GetColumnsWithDifferences(schemaName, tableName, dataColumns, dataRows1, dataRows2, 
+                results.AddRange(GetColumnsWithDifferences(schemaName, tableName, dataColumns, dataRows1, dataRows2,
                                                             friendlyName1, friendlyName2, DR, dbName1, dbName2));
             }
 
@@ -477,7 +477,7 @@ namespace DataComparison
             string idName = dataColumns.First().ColumnName;
 
             return dataColumns.Where(dc => !DR1[dc.ColumnName].Equals(DR2[dc.ColumnName]))
-                                .Select(dataColumn => GetColumnDifference(schema, table, friendlyName1, friendlyName2, 
+                                .Select(dataColumn => GetColumnDifference(schema, table, friendlyName1, friendlyName2,
                                                                             dataColumn, DR1, DR2, idName, dbName1, dbName2))
                                 .ToList();
         }
@@ -503,7 +503,7 @@ namespace DataComparison
         }
 
         private static string GetSelectForUpdate(string schema, string table, string friendlyName1, string friendlyName2,
-                                                string idName, string dbName1, string dbName2, int ID, 
+                                                string idName, string dbName1, string dbName2, int ID,
                                                 string column, string value1, string value2)
         {
             string select;
@@ -635,9 +635,14 @@ namespace DataComparison
             return input.Aggregate((current, next) => $"{current}, {next}");
         }
 
+        private static int GetID(DataRow dr)
+        {
+            return int.Parse(dr.ItemArray[0].ToString());
+        }
+
         private static ScriptForID GetSelectByID(DataRow dr, string schema, string table, string friendlyNameIn, string friendlyNameNotIn, string idName)
         {
-            int id = (int)dr.ItemArray[0];
+            int id = GetID(dr);
             string select = $"SELECT * FROM {schema}.{table}";
 
             return new ScriptForID(id, $"{select} WHERE {idName} = {id} --in {friendlyNameIn} but not in {friendlyNameNotIn}.");
@@ -645,7 +650,7 @@ namespace DataComparison
 
         private static ScriptForID GetInsertScriptByID(DataRow dr, string dbName, string schema, string table, string friendlyName, string columnList)
         {
-            int id = (int)dr.ItemArray[0];
+            int id = GetID(dr);
             //TODO: Handle tables without identity
             string identityOn = $"SET IDENTITY_INSERT {schema}.{table} ON";
             string insertInto = $"INSERT INTO {dbName}.{schema}.{table}({columnList})";
@@ -658,7 +663,7 @@ namespace DataComparison
 
         private static ScriptForID GetDeleteScriptByID(DataRow dr, string dbName, string schema, string table, string friendlyName, string idName)
         {
-            int id = (int)dr.ItemArray[0];
+            int id = GetID(dr);
 
             return new ScriptForID(id, $"--DELETE FROM {dbName}.{schema}.{table} WHERE {idName} = {id} --Delete from {friendlyName}");
         }
