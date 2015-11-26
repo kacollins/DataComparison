@@ -164,24 +164,35 @@ namespace DataComparison
 
         private static List<string> GetFileLines(string fileName)
         {
+            List<string> fileLines = new List<string>();
+
             const char backSlash = '\\';
             DirectoryInfo directoryInfo = new DirectoryInfo($"{CurrentDirectory}{backSlash}{Folder.Inputs}");
-            FileInfo file = directoryInfo.GetFiles(fileName).FirstOrDefault();
 
-            if (file == null)
+            if (directoryInfo.Exists)
             {
-                return new List<string>();
+                FileInfo file = directoryInfo.GetFiles(fileName).FirstOrDefault();
+
+                if (file == null)
+                {
+                    Console.WriteLine($"File does not exist: {directoryInfo.FullName}{backSlash}{fileName}");
+                }
+                else
+                {
+                    fileLines = File.ReadAllLines(file.FullName)
+                                            .Where(line => !string.IsNullOrWhiteSpace(line)
+                                                            && !line.StartsWith("--")
+                                                            && !line.StartsWith("//")
+                                                            && !line.StartsWith("'"))
+                                            .ToList();
+                }
             }
             else
             {
-                List<string> lines = File.ReadAllLines(file.FullName)
-                                        .Where(line => !string.IsNullOrWhiteSpace(line)
-                                                        && !line.StartsWith("--")
-                                                        && !line.StartsWith("//")
-                                                        && !line.StartsWith("'"))
-                                        .ToList();
-                return lines;
+                Console.WriteLine($"Directory does not exist: {directoryInfo.FullName}");
             }
+
+            return fileLines;
         }
 
         private static void CompareDatabasePair(List<Table> tablesToCompare, DatabasePair databasePair)
