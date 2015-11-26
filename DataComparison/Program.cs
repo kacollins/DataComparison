@@ -407,17 +407,29 @@ namespace DataComparison
             string columnList1 = SeparateWithCommas(dc1All.Select(dc => dc.ColumnName));
             string columnList2 = SeparateWithCommas(dc2All.Select(dc => dc.ColumnName));
 
-            List<DataRow> rowsIn1ButNot2 = dataRows1.Except(dataRows2, new DataRowIDComparer()).ToList();
-            results.AddRange(rowsIn1ButNot2.Select(d => GetSelectByID(d, schema, table, friendlyName1, friendlyName2, idName)));
-            results.AddRange(rowsIn1ButNot2.Select(v => GetInsertScriptByID(v, dbName2, schema, table, friendlyName2, columnList2))); //insert into db2
-            results.AddRange(rowsIn1ButNot2.Select(r => GetDeleteScriptByID(r, dbName1, schema, table, friendlyName1, idName))); //delete from db1
+            List<ScriptForID> resultsForRowsNotIn2 = GetResultsForMissingRows(schema, table, dataRows1, dataRows2, friendlyName1, friendlyName2, 
+                                                                                dbName1, dbName2, idName, columnList2);
+            results.AddRange(resultsForRowsNotIn2);
 
-            List<DataRow> rowsIn2ButNot1 = dataRows2.Except(dataRows1, new DataRowIDComparer()).ToList();
-            results.AddRange(rowsIn2ButNot1.Select(d => GetSelectByID(d, schema, table, friendlyName2, friendlyName1, idName)));
-            results.AddRange(rowsIn2ButNot1.Select(v => GetInsertScriptByID(v, dbName1, schema, table, friendlyName1, columnList1))); //insert into db1
-            results.AddRange(rowsIn2ButNot1.Select(r => GetDeleteScriptByID(r, dbName2, schema, table, friendlyName2, idName))); //delete from db2
+            List<ScriptForID> resultsForRowsNotIn1 = GetResultsForMissingRows(schema, table, dataRows2, dataRows1, friendlyName2, friendlyName1,
+                                                                                dbName2, dbName1, idName, columnList1);
+            results.AddRange(resultsForRowsNotIn1);
 
             return results.OrderBy(r => r.ID).Select(r => r.Script).ToList();
+        }
+
+        private static List<ScriptForID> GetResultsForMissingRows(string schema, string table, List<DataRow> dataRowsSource, List<DataRow> dataRowsDest,
+                                                                    string friendlyNameSource, string friendlyNameDest, 
+                                                                    string dbNameSource, string dbNameDest, string idName, string columnListDest)
+        {
+            List<ScriptForID> results = new List<ScriptForID>();
+
+            List<DataRow> missingRows = dataRowsSource.Except(dataRowsDest, new DataRowIDComparer()).ToList();
+            results.AddRange(missingRows.Select(d => GetSelectByID(d, schema, table, friendlyNameSource, friendlyNameDest, idName)));
+            results.AddRange(missingRows.Select(v => GetInsertScriptByID(v, dbNameDest, schema, table, friendlyNameDest, columnListDest)));
+            results.AddRange(missingRows.Select(r => GetDeleteScriptByID(r, dbNameSource, schema, table, friendlyNameSource, idName)));
+
+            return results;
         }
 
         private static List<string> GetDifferencesForSameIDs(string schemaName, string tableName, List<DataColumn> dataColumns,
