@@ -492,11 +492,37 @@ namespace DataComparison
             string value1 = $"'{DR1[dataColumn.ColumnName]}'";
             string value2 = $"'{DR2[dataColumn.ColumnName]}'";
 
-            string select = $"SELECT * FROM {schema}.{table} WHERE {idName} = {ID} --{column} = {value1} in {friendlyName1} but {value2} in {friendlyName2}.";
-            string update1 = $"--UPDATE {dbName1}.{schema}.{table} SET {column} = {value2} WHERE {idName} = {ID} --update {friendlyName1}.";
-            string update2 = $"--UPDATE {dbName2}.{schema}.{table} SET {column} = {value1} WHERE {idName} = {ID} --update {friendlyName2}.";
+            string select1 = $"SELECT * FROM {dbName1}.{schema}.{table} WHERE {idName} = {ID}";
+            string select2 = $"SELECT * FROM {dbName2}.{schema}.{table} WHERE {idName} = {ID}";
+            string select = select1;
 
-            return $"{select}{Environment.NewLine}{update1}{Environment.NewLine}{update2}";
+            if (select1 != select2)
+            {
+                select = $"{select1} --{friendlyName1}{Environment.NewLine}{select2} --{friendlyName2}";
+            }
+
+            string valueComment1 = $"--{column} = {value1} in {friendlyName1}";
+            string valueComment2 = $"--{column} = {value2} in {friendlyName2}";
+            string updateComment1 = $"--Execute this script against {friendlyName1} to update it to match {friendlyName2}:";
+            string update1 = $@"/*{
+                Environment.NewLine}UPDATE {dbName1}.{schema}.{table}{
+                Environment.NewLine}SET {column} = {value2}{
+                Environment.NewLine}WHERE {idName} = {ID}{
+                Environment.NewLine}*/";
+            string updateComment2 = $"--Execute this script against {friendlyName2} to update it to match {friendlyName1}:";
+            string update2 = $@"/*{
+                Environment.NewLine}UPDATE {dbName2}.{schema}.{table}{
+                Environment.NewLine}SET {column} = {value1}{
+                Environment.NewLine}WHERE {idName} = {ID}{
+                Environment.NewLine}*/";
+
+            return $@"{Environment.NewLine}{select}{
+                        Environment.NewLine}{valueComment1}{
+                        Environment.NewLine}{valueComment2}{
+                        Environment.NewLine}{updateComment1}{
+                        Environment.NewLine}{update1}{
+                        Environment.NewLine}{updateComment2}{
+                        Environment.NewLine}{update2}";
         }
 
         private static List<string> GetValidationErrors(string schema, string table, string idName,
