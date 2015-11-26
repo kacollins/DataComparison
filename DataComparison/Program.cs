@@ -14,32 +14,20 @@ namespace DataComparison
 
         static void Main(string[] args)
         {
-            //TODO: add argument for whether this is being run manually vs automated?
-
-            string tableFileName = string.Empty;
-            string databaseFileName = string.Empty;
-            string columnFileName = string.Empty;
-
-            if (args.Length > (int)InputFile.TablesToCompare)
-            {
-                tableFileName = args[(int)InputFile.TablesToCompare];
-
-                if (args.Length > (int)InputFile.DatabasePairs)
-                {
-                    databaseFileName = args[(int)InputFile.DatabasePairs];
-
-                    if (args.Length > (int)InputFile.ColumnsToIgnore)
-                    {
-                        columnFileName = args[(int)InputFile.ColumnsToIgnore];
-                    }
-                }
-            }
+            string silentModeFlag = args.Length > (int)Argument.SilentModeFlag ? args[(int)Argument.SilentModeFlag] : string.Empty;
+            bool silentMode = silentModeFlag == 1.ToString();
+            string tableFileName = args.Length > (int)Argument.TableFileName ? args[(int)Argument.TableFileName] : string.Empty;
+            string databaseFileName = args.Length > (int)Argument.DatabaseFileName ? args[(int)Argument.DatabaseFileName] : string.Empty;
+            string columnFileName = args.Length > (int)Argument.ColumnFileName ? args[(int)Argument.ColumnFileName] : string.Empty;
 
             GetColumnsToIgnore(columnFileName);
             CompareTables(tableFileName, databaseFileName);
 
-            Console.WriteLine("Press enter to exit:");
-            Console.Read();
+            if (!silentMode)
+            {
+                Console.WriteLine("Press enter to exit:");
+                Console.Read();
+            }
         }
 
         #region Methods
@@ -825,6 +813,14 @@ namespace DataComparison
             TablesToCompare,
             DatabasePairs,
             ColumnsToIgnore
+        }
+
+        private enum Argument
+        {
+            SilentModeFlag,
+            TableFileName,
+            DatabaseFileName,
+            ColumnFileName
         }
 
         private enum OutputFileExtension
