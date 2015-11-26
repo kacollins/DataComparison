@@ -30,12 +30,13 @@ The results will go in a folder called **Outputs** under bin\Debug, with one fil
 
 When scheduling the task, put the location of the bin\Debug folder in the "Start in (optional)" field.
 
-Optional arguments:
+Command-line arguments:
+* flag for silent mode (1 = true, everything else = false)
 * different filename for TablesToCompare.supersecret (ex: EnumTables.supersecret or MyTables.txt)
 * different filename for DatabasePairs.supersecret
 * different filename for ColumnsToIgnore.supersecret
 
-To specify command line arguments in Visual Studio:
+To specify command-line arguments in Visual Studio:
 * Right click the project and select Properties.
 * Go to the Debug tab.
 * Enter the arguments separated by spaces in the "Command line arguments" textbox.
