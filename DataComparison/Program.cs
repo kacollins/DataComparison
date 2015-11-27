@@ -779,7 +779,7 @@ namespace DataComparison
 										(
 											dc => DR2[dc.ColumnName].Equals(DR1[dc.ColumnName])
 											||
-											(DR2[dc.ColumnName].GetType().IsArray && CompareArray((Array)DR1[dc.ColumnName], DR2[dc.ColumnName] as Array)
+											(DR2[dc.ColumnName].GetType().IsArray && CompareArray((Array)DR1[dc.ColumnName], DR2[dc.ColumnName] as Array))
 										);
             }
 
