@@ -353,17 +353,13 @@ namespace DataComparison
         }
 
         private static List<string> CompareDataTables(DataTable dt1, DataTable dt2,
-                                                string schemaName, string tableName,
-                                                string friendlyName1, string friendlyName2,
-                                                string dbName1, string dbName2)
+                                                        string schemaName, string tableName,
+                                                        string friendlyName1, string friendlyName2,
+                                                        string dbName1, string dbName2)
         {
-            List<DataColumn> dc1 = GetColumns(dt1, true);
-            List<DataColumn> dc2 = GetColumns(dt2, true);
-
+            string idColumnName = dt1.Columns[0].ColumnName;
             List<DataRow> dr1 = GetRows(dt1);
             List<DataRow> dr2 = GetRows(dt2);
-
-            string idColumnName = dc1.First().ColumnName;
 
             List<string> validationErrors = GetValidationErrors(schemaName, tableName, idColumnName, friendlyName1, friendlyName2, dr1, dr2);
 
@@ -373,6 +369,11 @@ namespace DataComparison
             }
             else
             {
+                List<DataColumn> dc1 = GetColumns(dt1, true);
+                List<DataColumn> dc2 = GetColumns(dt2, true);
+                List<DataColumn> dc1All = GetColumns(dt1, false);
+                List<DataColumn> dc2All = GetColumns(dt2, false);
+
                 List<string> validationWarnings = GetValidationWarnings(schemaName, tableName, dc1, dc2, friendlyName1, friendlyName2);
 
                 foreach (DataColumn dc in dc1.Where(x => dc2.All(y => x.ColumnName != y.ColumnName)))
@@ -385,8 +386,6 @@ namespace DataComparison
                     dt2.Columns.Remove(dc);
                 }
 
-                List<DataColumn> dc1All = GetColumns(dt1, false).ToList();
-                List<DataColumn> dc2All = GetColumns(dt2, false).ToList();
                 List<string> differencesInIDs = GetDifferencesInIDs(schemaName, tableName, dr1, dr2, friendlyName1, friendlyName2, dc1All, dc2All, dbName1, dbName2);
 
                 dc1 = GetColumns(dt1, true).ToList();
@@ -444,26 +443,20 @@ namespace DataComparison
 
             List<string> results = new List<string>();
 
-            //this assumes that the first column is the int ID column
-            //Find the set of rows with IDs that are common between the two sets.
-            List<DataRow> RowsWithSameIDs = dataRows1.Intersect(dataRows2, new DataRowIDComparer()).ToList();
+            //Get rows in dr1 where the ID exists in dr2
+            List<DataRow> dr1WithCommonIDs = dataRows1.Intersect(dataRows2, new DataRowIDComparer()).ToList();
 
-            //Find all the rows from the first set that are in the common set
-            //Find all the rows from the second set that are in the common set
-            //Find all the rows that have IDs in the common set, but have different column values
-            List<DataRow> RowsWithSameIDsButDifferentValues = dataRows1
-                                                                .Intersect(RowsWithSameIDs, new DataRowIDComparer())
-                                                                .Except
-                                                                        (
-                                                                            dataRows2.Intersect(RowsWithSameIDs, new DataRowIDComparer())
-                                                                            , new DataRowComparer(dataColumns)
-                                                                        )
+            //Get rows in dr1 where the ID exists in dr2 but where the records have different column values
+            List<DataRow> dr1WithCommonIDsButDifferentValues = dr1WithCommonIDs
+                                                                .Except(dataRows2, new DataRowComparer(dataColumns))
                                                                 .ToList();
 
-            foreach (DataRow DR in RowsWithSameIDsButDifferentValues)
+            List<int> idsWithDifferentValues = dr1WithCommonIDsButDifferentValues.Select(GetID).ToList();
+
+            foreach (int id in idsWithDifferentValues)
             {
                 results.AddRange(GetColumnsWithDifferences(schemaName, tableName, dataColumns, dataRows1, dataRows2,
-                                                            friendlyName1, friendlyName2, DR, dbName1, dbName2));
+                                                            friendlyName1, friendlyName2, id, dbName1, dbName2));
             }
 
             return results;
@@ -471,11 +464,11 @@ namespace DataComparison
 
         private static List<string> GetColumnsWithDifferences(string schema, string table, List<DataColumn> dataColumns,
                                                             List<DataRow> dataRows1, List<DataRow> dataRows2,
-                                                            string friendlyName1, string friendlyName2, DataRow DR,
+                                                            string friendlyName1, string friendlyName2, int id,
                                                             string dbName1, string dbName2)
         {
-            DataRow DR1 = dataRows1.Single(dr1 => int.Parse(dr1.ItemArray[0].ToString()) == int.Parse(DR.ItemArray[0].ToString()));
-            DataRow DR2 = dataRows2.Single(dr2 => int.Parse(dr2.ItemArray[0].ToString()) == int.Parse(DR.ItemArray[0].ToString()));
+            DataRow DR1 = dataRows1.Single(dr1 => GetID(dr1) == id);
+            DataRow DR2 = dataRows2.Single(dr2 => GetID(dr2) == id);
 
             string idName = dataColumns.First().ColumnName;
 
@@ -782,7 +775,7 @@ namespace DataComparison
 
             public bool Equals(DataRow DR1, DataRow DR2)
             {
-                return int.Parse(DR1.ItemArray[0].ToString()) == int.Parse(DR2.ItemArray[0].ToString()) && dataColumns.All(dc => DR2[dc.ColumnName].Equals(DR1[dc.ColumnName]));
+                return dataColumns.All(dc => DR2[dc.ColumnName].Equals(DR1[dc.ColumnName]));
             }
 
             public int GetHashCode(DataRow DR)
