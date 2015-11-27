@@ -754,7 +754,16 @@ namespace DataComparison
 
             public bool Equals(DataRow DR1, DataRow DR2)
             {
-                return int.Parse(DR1.ItemArray[0].ToString()) == int.Parse(DR2.ItemArray[0].ToString()) && dataColumns.All(dc => DR2[dc.ColumnName].Equals(DR1[dc.ColumnName]));
+                return int.Parse
+                                (
+                                    DR1.ItemArray[0].ToString()) == int.Parse(DR2.ItemArray[0].ToString())
+                                    &&
+                                        (
+                                            dataColumns.All(dc => DR2[dc.ColumnName].Equals(DR1[dc.ColumnName])
+                                            ||
+                                            (DR2[dc.ColumnName].GetType().IsArray && CompareArray((Array)DR1[dc.ColumnName], DR2[dc.ColumnName] as Array))
+                                        )
+                                );
             }
 
             public int GetHashCode(DataRow DR)
@@ -771,6 +780,87 @@ namespace DataComparison
                 //https://msdn.microsoft.com/en-us/library/system.object.gethashcode(v=vs.110).aspx
 
                 return dataColumns.Aggregate(0, (current, dataColumn) => current ^ DR[dataColumn.ColumnName].GetHashCode());
+            }
+
+            private static bool AreElementEqual(object a, object b)
+            {
+                if (Object.ReferenceEquals(a, b))
+                {   // same reference or (null, null) or (DBNull.Value, DBNull.Value)
+                    return true;
+                }
+                if (Object.ReferenceEquals(a, null) || Object.ReferenceEquals(a, DBNull.Value) ||
+                    Object.ReferenceEquals(b, null) || Object.ReferenceEquals(b, DBNull.Value))
+                {   // (null, non-null) or (null, DBNull.Value) or vice versa
+                    return false;
+                }
+                return a.Equals(b);
+            }
+
+            private static bool CompareArray(Array a, Array b)
+            {
+                if ((null == b) ||
+                    (1 != a.Rank) ||
+                    (1 != b.Rank) ||
+                    (a.Length != b.Length))
+                {   // automatically consider array's with Rank>1 not-equal
+                    return false;
+                }
+
+                int index1 = a.GetLowerBound(0);
+                int index2 = b.GetLowerBound(0);
+                if (a.GetType() == b.GetType() && (0 == index1) && (0 == index2))
+                {
+                    switch (Type.GetTypeCode(a.GetType().GetElementType()))
+                    {
+                        case TypeCode.Byte:
+                            return DataRowComparer.CompareEquatableArray<Byte>((Byte[])a, (Byte[])b);
+                        case TypeCode.Int16:
+                            return DataRowComparer.CompareEquatableArray<Int16>((Int16[])a, (Int16[])b);
+                        case TypeCode.Int32:
+                            return DataRowComparer.CompareEquatableArray<Int32>((Int32[])a, (Int32[])b);
+                        case TypeCode.Int64:
+                            return DataRowComparer.CompareEquatableArray<Int64>((Int64[])a, (Int64[])b);
+                        case TypeCode.String:
+                            return DataRowComparer.CompareEquatableArray<String>((String[])a, (String[])b);
+                    }
+                }
+
+                //Compare every element. But don't recurse if we have Array of array.
+                int length = index1 + a.Length;
+                for (; index1 < length; ++index1, ++index2)
+                {
+                    if (!AreElementEqual(a.GetValue(index1), b.GetValue(index2)))
+                    {
+                        return false;
+                    }
+                }
+                return true;
+            }
+
+            private static bool CompareEquatableArray<TElem>(TElem[] a, TElem[] b) where TElem : IEquatable<TElem>
+            {
+                if (Object.ReferenceEquals(a, b))
+                {
+                    return true;
+                }
+                if (Object.ReferenceEquals(a, null) ||
+                    Object.ReferenceEquals(b, null))
+                {
+                    return false;
+                }
+                if (a.Length != b.Length)
+                {
+                    return false;
+                }
+
+                for (int i = 0; i < a.Length; ++i)
+                {
+                    if (!a[i].Equals(b[i]))
+                    {
+                        return false;
+                    }
+                }
+                return true;
             }
         }
 
