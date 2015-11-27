@@ -102,9 +102,7 @@ namespace DataComparison
                                                                             parts[(int)TablePart.TableName]))
                                                 .ToList();
 
-            List<string> errorMessages = lines.Where(line => line.Split(separator).Length != Enum.GetValues(typeof(TablePart)).Length)
-                                                .Select(invalidLine => $"Invalid schema/table format: {invalidLine}")
-                                                .ToList();
+            List<string> errorMessages = GetFileErrors(lines, separator, Enum.GetValues(typeof(TablePart)).Length, "schema/table format");
 
             if (errorMessages.Any())
             {
@@ -114,6 +112,15 @@ namespace DataComparison
             TableFileResult result = new TableFileResult(tablesToCompare, errorMessages);
 
             return result;
+        }
+
+        private static List<string> GetFileErrors(List<string> fileLines, char separator, int length, string description)
+        {
+            List<string> errorMessages = fileLines.Where(line => line.Split(separator).Length != length)
+                                                    .Select(invalidLine => $"Invalid {description}: {invalidLine}")
+                                                    .ToList();
+
+            return errorMessages;
         }
 
         private static DatabaseFileResult GetDatabasePairs(string fileName)
@@ -136,9 +143,7 @@ namespace DataComparison
                                                                                                     parts[(int)DatabasePairPart.DatabaseName2])))
                                                     .ToList();
 
-            List<string> errorMessages = lines.Where(line => line.Split(separator).Length != Enum.GetValues(typeof(DatabasePairPart)).Length)
-                                                .Select(invalidLine => $"Invalid database pair format: {invalidLine}")
-                                                .ToList();
+            List<string> errorMessages = GetFileErrors(lines, separator, Enum.GetValues(typeof(DatabasePairPart)).Length, "database pair format");
 
             if (errorMessages.Any())
             {
