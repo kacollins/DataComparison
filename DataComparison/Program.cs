@@ -387,9 +387,7 @@ namespace DataComparison
                 dc1 = GetColumns(dt1, true).ToList();
                 List<string> differencesForSameIDs = GetDifferencesForSameIDs(schemaName, tableName, dc1, dr1, dr2, friendlyName1, friendlyName2, dbName1, dbName2);
 
-                List<string> results = validationWarnings.Union(differencesInIDs).Union(differencesForSameIDs).ToList();
-
-                return results;
+                return validationWarnings.Union(differencesInIDs).Union(differencesForSameIDs).ToList();
             }
         }
 
@@ -407,7 +405,7 @@ namespace DataComparison
             string columnList1 = SeparateWithCommas(dc1All.Select(dc => dc.ColumnName));
             string columnList2 = SeparateWithCommas(dc2All.Select(dc => dc.ColumnName));
 
-            List<ScriptForID> resultsForRowsNotIn2 = GetResultsForMissingRows(schema, table, dataRows1, dataRows2, friendlyName1, friendlyName2, 
+            List<ScriptForID> resultsForRowsNotIn2 = GetResultsForMissingRows(schema, table, dataRows1, dataRows2, friendlyName1, friendlyName2,
                                                                                 dbName1, dbName2, idName, columnList2);
             results.AddRange(resultsForRowsNotIn2);
 
@@ -419,7 +417,7 @@ namespace DataComparison
         }
 
         private static List<ScriptForID> GetResultsForMissingRows(string schema, string table, List<DataRow> dataRowsSource, List<DataRow> dataRowsDest,
-                                                                    string friendlyNameSource, string friendlyNameDest, 
+                                                                    string friendlyNameSource, string friendlyNameDest,
                                                                     string dbNameSource, string dbNameDest, string idName, string columnListDest)
         {
             List<ScriptForID> results = new List<ScriptForID>();
@@ -555,15 +553,19 @@ namespace DataComparison
             //Make sure ID is an int
             int output;
             results.AddRange(dataRows1.Where(r => !int.TryParse(r.ItemArray[0].ToString(), out output))
-                                .Select(d => $"SELECT * FROM {schema}.{table} WHERE {idName} = '{d.ItemArray[0]}' --ID is not an int in {friendlyName1} (table not compared)"));
+                                        .Select(d => GetSelectForError(schema, table, idName, d.ItemArray[0].ToString(),
+                                                        $"ID is not an int in {friendlyName1}")));
             results.AddRange(dataRows2.Where(r => !int.TryParse(r.ItemArray[0].ToString(), out output))
-                                .Select(d => $"SELECT * FROM {schema}.{table} WHERE {idName} = '{d.ItemArray[0]}' --ID is not an int in {friendlyName2} (table not compared)"));
+                                        .Select(d => GetSelectForError(schema, table, idName, d.ItemArray[0].ToString(),
+                                                        $"ID is not an int in {friendlyName2}")));
 
             //Check for duplicate ID values
             results.AddRange(dataRows1.GroupBy(r => r.ItemArray[0]).Where(g => g.Count() > 1)
-                                        .Select(d => $"SELECT * FROM {schema}.{table} WHERE {idName} = {d.Key} --Duplicate ID in {friendlyName1} (table not compared)"));
+                                        .Select(d => GetSelectForError(schema, table, idName, d.Key.ToString(),
+                                                        $"Duplicate ID in {friendlyName1}")));
             results.AddRange(dataRows2.GroupBy(r => r.ItemArray[0]).Where(g => g.Count() > 1)
-                                        .Select(d => $"SELECT * FROM {schema}.{table} WHERE {idName} = {d.Key} --Duplicate ID in {friendlyName2} (table not compared)"));
+                                        .Select(d => GetSelectForError(schema, table, idName, d.Key.ToString(),
+                                                        $"Duplicate ID in {friendlyName2}")));
 
             return results;
         }
@@ -633,6 +635,11 @@ namespace DataComparison
         private static string SeparateWithCommas(IEnumerable<string> input)
         {
             return input.Aggregate((current, next) => $"{current}, {next}");
+        }
+
+        private static string GetSelectForError(string schema, string table, string idName, string id, string error)
+        {
+            return $@"SELECT * FROM {schema}.{table} WHERE {idName} = '{id}' --{error} (table not compared)";
         }
 
         private static int GetID(DataRow dr)
