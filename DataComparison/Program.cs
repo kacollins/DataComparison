@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -796,7 +797,10 @@ namespace DataComparison
                 //It looks like more reading can be done here if this is determined to be stupid:
                 //https://msdn.microsoft.com/en-us/library/system.object.gethashcode(v=vs.110).aspx
 
-                return dataColumns.Aggregate(0, (current, dataColumn) => current ^ DR[dataColumn.ColumnName].GetHashCode());
+                return dataColumns.Aggregate(0, (current, dataColumn) =>
+                                                                            !DR[dataColumn.ColumnName].GetType().IsArray
+                                                                                ? current ^ DR[dataColumn.ColumnName].GetHashCode()
+                                                                                : current ^ ((IStructuralEquatable)DR[dataColumn.ColumnName]).GetHashCode(EqualityComparer<object>.Default));
             }
 
             private static bool AreElementEqual(object a, object b)
