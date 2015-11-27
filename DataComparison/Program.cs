@@ -550,22 +550,26 @@ namespace DataComparison
 
             List<string> results = new List<string>();
 
+            results.AddRange(GetValidationErrors(schema, table, idName, friendlyName1, dataRows1));
+            results.AddRange(GetValidationErrors(schema, table, idName, friendlyName2, dataRows2));
+
+            return results;
+        }
+
+        private static List<string> GetValidationErrors(string schema, string table, string idName, string friendlyName, List<DataRow> dataRows)
+        {
+            List<string> results = new List<string>();
+
             //Make sure ID is an int
             int output;
-            results.AddRange(dataRows1.Where(r => !int.TryParse(r.ItemArray[0].ToString(), out output))
-                                        .Select(d => GetSelectForError(schema, table, idName, d.ItemArray[0].ToString(),
-                                                        $"ID is not an int in {friendlyName1}")));
-            results.AddRange(dataRows2.Where(r => !int.TryParse(r.ItemArray[0].ToString(), out output))
-                                        .Select(d => GetSelectForError(schema, table, idName, d.ItemArray[0].ToString(),
-                                                        $"ID is not an int in {friendlyName2}")));
+            results.AddRange(dataRows.Where(r => !int.TryParse(r.ItemArray[0].ToString(), out output))
+                .Select(d => GetSelectForError(schema, table, idName, d.ItemArray[0].ToString(),
+                    $"ID is not an int in {friendlyName}")));
 
             //Check for duplicate ID values
-            results.AddRange(dataRows1.GroupBy(r => r.ItemArray[0]).Where(g => g.Count() > 1)
-                                        .Select(d => GetSelectForError(schema, table, idName, d.Key.ToString(),
-                                                        $"Duplicate ID in {friendlyName1}")));
-            results.AddRange(dataRows2.GroupBy(r => r.ItemArray[0]).Where(g => g.Count() > 1)
-                                        .Select(d => GetSelectForError(schema, table, idName, d.Key.ToString(),
-                                                        $"Duplicate ID in {friendlyName2}")));
+            results.AddRange(dataRows.GroupBy(r => r.ItemArray[0]).Where(g => g.Count() > 1)
+                .Select(d => GetSelectForError(schema, table, idName, d.Key.ToString(),
+                    $"Duplicate ID in {friendlyName}")));
 
             return results;
         }
