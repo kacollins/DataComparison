@@ -16,7 +16,8 @@ namespace DataComparison
         static void Main(string[] args)
         {
             string silentModeFlag = args.Length > (int)Argument.SilentModeFlag ? args[(int)Argument.SilentModeFlag] : string.Empty;
-            bool silentMode = silentModeFlag == 1.ToString();
+            bool silentMode = GetSilentMode(silentModeFlag);
+
             string tableFileName = args.Length > (int)Argument.TableFileName ? args[(int)Argument.TableFileName] : string.Empty;
             string databaseFileName = args.Length > (int)Argument.DatabaseFileName ? args[(int)Argument.DatabaseFileName] : string.Empty;
             string columnFileName = args.Length > (int)Argument.ColumnFileName ? args[(int)Argument.ColumnFileName] : string.Empty;
@@ -29,6 +30,19 @@ namespace DataComparison
                 Console.WriteLine("Press enter to exit:");
                 Console.Read();
             }
+        }
+
+        private static bool GetSilentMode(string silentModeFlag)
+        {
+            bool silentMode;
+
+            if (!bool.TryParse(silentModeFlag, out silentMode))
+            {
+                const int silentModeOn = 1;
+                silentMode = silentModeFlag == silentModeOn.ToString();
+            }
+
+            return silentMode;
         }
 
         #region Methods
@@ -773,11 +787,11 @@ namespace DataComparison
             public bool Equals(DataRow DR1, DataRow DR2)
             {
                 return dataColumns.All
-										(
-											dc => DR2[dc.ColumnName].Equals(DR1[dc.ColumnName])
-											||
-											(DR2[dc.ColumnName].GetType().IsArray && CompareArray((Array)DR1[dc.ColumnName], DR2[dc.ColumnName] as Array))
-										);
+                                        (
+                                            dc => DR2[dc.ColumnName].Equals(DR1[dc.ColumnName])
+                                            ||
+                                            (DR2[dc.ColumnName].GetType().IsArray && CompareArray((Array)DR1[dc.ColumnName], DR2[dc.ColumnName] as Array))
+                                        );
             }
 
             public int GetHashCode(DataRow DR)
