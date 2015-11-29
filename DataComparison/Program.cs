@@ -1,11 +1,11 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Data;
+using System.Data.SqlClient;
+using System.IO;
 using System.Linq;
 using System.Text;
-using System.Data.SqlClient;
-using System.Data;
-using System.IO;
 
 namespace DataComparison
 {
@@ -323,7 +323,7 @@ namespace DataComparison
             }
             else
             {
-                ColumnsToIgnore = new List<string>()
+                ColumnsToIgnore = new List<string>
                 {
                     "UserCreated",
                     "DateCreated",
@@ -368,32 +368,30 @@ namespace DataComparison
             {
                 return validationErrors;
             }
-            else
+
+            List<DataColumn> dc1 = GetColumns(dt1, true);
+            List<DataColumn> dc2 = GetColumns(dt2, true);
+            List<DataColumn> dc1All = GetColumns(dt1, false);
+            List<DataColumn> dc2All = GetColumns(dt2, false);
+
+            List<string> validationWarnings = GetValidationWarnings(schemaName, tableName, dc1, dc2, friendlyName1, friendlyName2);
+
+            foreach (DataColumn dc in dc1.Where(x => dc2.All(y => x.ColumnName != y.ColumnName)))
             {
-                List<DataColumn> dc1 = GetColumns(dt1, true);
-                List<DataColumn> dc2 = GetColumns(dt2, true);
-                List<DataColumn> dc1All = GetColumns(dt1, false);
-                List<DataColumn> dc2All = GetColumns(dt2, false);
-
-                List<string> validationWarnings = GetValidationWarnings(schemaName, tableName, dc1, dc2, friendlyName1, friendlyName2);
-
-                foreach (DataColumn dc in dc1.Where(x => dc2.All(y => x.ColumnName != y.ColumnName)))
-                {
-                    dt1.Columns.Remove(dc);
-                }
-
-                foreach (DataColumn dc in dc2.Where(x => dc1.All(y => x.ColumnName != y.ColumnName)))
-                {
-                    dt2.Columns.Remove(dc);
-                }
-
-                List<string> differencesInIDs = GetDifferencesInIDs(schemaName, tableName, dr1, dr2, friendlyName1, friendlyName2, dc1All, dc2All, dbName1, dbName2);
-
-                dc1 = GetColumns(dt1, true).ToList();
-                List<string> differencesForSameIDs = GetDifferencesForSameIDs(schemaName, tableName, dc1, dr1, dr2, friendlyName1, friendlyName2, dbName1, dbName2);
-
-                return validationWarnings.Union(differencesInIDs).Union(differencesForSameIDs).ToList();
+                dt1.Columns.Remove(dc);
             }
+
+            foreach (DataColumn dc in dc2.Where(x => dc1.All(y => x.ColumnName != y.ColumnName)))
+            {
+                dt2.Columns.Remove(dc);
+            }
+
+            List<string> differencesInIDs = GetDifferencesInIDs(schemaName, tableName, dr1, dr2, friendlyName1, friendlyName2, dc1All, dc2All, dbName1, dbName2);
+
+            dc1 = GetColumns(dt1, true).ToList();
+            List<string> differencesForSameIDs = GetDifferencesForSameIDs(schemaName, tableName, dc1, dr1, dr2, friendlyName1, friendlyName2, dbName1, dbName2);
+
+            return validationWarnings.Union(differencesInIDs).Union(differencesForSameIDs).ToList();
         }
 
         private static List<string> GetDifferencesInIDs(string schema, string table,
@@ -600,8 +598,6 @@ namespace DataComparison
         private static string CheckForDifferentDataTypes(string schema, string table,
                                                         List<DataColumn> dc1, List<DataColumn> dc2)
         {
-            //TODO: Determine whether different data types even matter
-
             DisplayProgressMessage($"Checking for different data types in {schema}.{table}...");
             string result = string.Empty;
 
@@ -805,12 +801,12 @@ namespace DataComparison
 
             private static bool AreElementEqual(object a, object b)
             {
-                if (Object.ReferenceEquals(a, b))
+                if (ReferenceEquals(a, b))
                 {   // same reference or (null, null) or (DBNull.Value, DBNull.Value)
                     return true;
                 }
-                if (Object.ReferenceEquals(a, null) || Object.ReferenceEquals(a, DBNull.Value) ||
-                    Object.ReferenceEquals(b, null) || Object.ReferenceEquals(b, DBNull.Value))
+                if (ReferenceEquals(a, null) || ReferenceEquals(a, DBNull.Value) ||
+                    ReferenceEquals(b, null) || ReferenceEquals(b, DBNull.Value))
                 {   // (null, non-null) or (null, DBNull.Value) or vice versa
                     return false;
                 }
@@ -834,15 +830,15 @@ namespace DataComparison
                     switch (Type.GetTypeCode(a.GetType().GetElementType()))
                     {
                         case TypeCode.Byte:
-                            return DataRowComparer.CompareEquatableArray<Byte>((Byte[])a, (Byte[])b);
+                            return CompareEquatableArray((byte[])a, (byte[])b);
                         case TypeCode.Int16:
-                            return DataRowComparer.CompareEquatableArray<Int16>((Int16[])a, (Int16[])b);
+                            return CompareEquatableArray((short[])a, (short[])b);
                         case TypeCode.Int32:
-                            return DataRowComparer.CompareEquatableArray<Int32>((Int32[])a, (Int32[])b);
+                            return CompareEquatableArray((int[])a, (int[])b);
                         case TypeCode.Int64:
-                            return DataRowComparer.CompareEquatableArray<Int64>((Int64[])a, (Int64[])b);
+                            return CompareEquatableArray((long[])a, (long[])b);
                         case TypeCode.String:
-                            return DataRowComparer.CompareEquatableArray<String>((String[])a, (String[])b);
+                            return CompareEquatableArray((string[])a, (string[])b);
                     }
                 }
 
@@ -860,12 +856,12 @@ namespace DataComparison
 
             private static bool CompareEquatableArray<TElem>(TElem[] a, TElem[] b) where TElem : IEquatable<TElem>
             {
-                if (Object.ReferenceEquals(a, b))
+                if (ReferenceEquals(a, b))
                 {
                     return true;
                 }
-                if (Object.ReferenceEquals(a, null) ||
-                    Object.ReferenceEquals(b, null))
+                if (ReferenceEquals(a, null) ||
+                    ReferenceEquals(b, null))
                 {
                     return false;
                 }
@@ -874,14 +870,7 @@ namespace DataComparison
                     return false;
                 }
 
-                for (int i = 0; i < a.Length; ++i)
-                {
-                    if (!a[i].Equals(b[i]))
-                    {
-                        return false;
-                    }
-                }
-                return true;
+                return !a.Where((t, i) => !t.Equals(b[i])).Any();
             }
         }
 
