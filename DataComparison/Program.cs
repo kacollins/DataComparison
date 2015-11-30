@@ -288,6 +288,8 @@ namespace DataComparison
                 results.Add($"--Error for {friendlyName2}: {ex.Message}");
             }
 
+            //TODO: If table exists in one database but not the other, generate insert scripts for all rows
+
             if (DT1 != null && DT2 != null)
             {
                 DisplayProgressMessage("Data retrieval successful!");
@@ -544,6 +546,8 @@ namespace DataComparison
         {
             string updateComment = $"--Execute this script against {friendlyNameDest} to update it to match {friendlyNameSource}:";
 
+            //TODO: Set UserModified and DateModified if those columns exist in the table
+
             string update = $@"{updateComment}{Environment.NewLine}/*{
                 Environment.NewLine}UPDATE {dbNameDest}.{schema}.{table}{
                 Environment.NewLine}SET {column} = {valueSource}{
@@ -671,7 +675,7 @@ namespace DataComparison
         private static ScriptForID GetInsertScriptByID(DataRow dr, string dbName, string schema, string table, string friendlyName, string columnList)
         {
             int id = GetID(dr);
-            //TODO: Handle tables without identity
+            //TODO: Handle tables without identity specification? would need to add a flag to the input file
             string identityOn = $"SET IDENTITY_INSERT {schema}.{table} ON";
             string insertInto = $"INSERT INTO {dbName}.{schema}.{table}({columnList})";
             string identityOff = $"SET IDENTITY_INSERT {schema}.{table} OFF";
