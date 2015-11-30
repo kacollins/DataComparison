@@ -31,7 +31,7 @@ The results will go in a folder called **Outputs** under bin\Debug, with one fil
 When scheduling the task, put the location of the bin\Debug folder in the "Start in (optional)" field.
 
 Command-line arguments:
-* flag for silent mode (1 = true, everything else = false)
+* flag for silent mode (Use "1" or the word "true" to set silent mode on.)
 * different filename for TablesToCompare.supersecret (ex: EnumTables.supersecret or MyTables.txt)
 * different filename for DatabasePairs.supersecret
 * different filename for ColumnsToIgnore.supersecret
