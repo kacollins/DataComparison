@@ -2,7 +2,7 @@
 This application is intended to compare the data in lookup tables between versions of the database on different servers.
 The goal is to schedule a task to run the app daily to catch changes made by users, differences in the results of scripts (be careful with identity insert!), and data changes that need to be rolled.
 
-The comparison works for views too!
+*The comparison works for views too!*
 
 Create these text files and put them in a folder called **Inputs** under bin\Debug:
 * **TablesToCompare**.supersecret
