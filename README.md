@@ -28,7 +28,7 @@ Create these text files and put them in a folder called **Inputs** under bin\Deb
 
 The results will go in a folder called **Outputs** under bin\Debug, with one file per database pair per day.
 
-When scheduling the task, put the location of the bin\Debug folder in the "Start in (optional)" field.
+When scheduling the task, put the location of the bin\Debug folder in the **"Start in (optional)"** field.
 
 Command-line arguments:
 * flag for silent mode (Use "1" or the word "true" to set silent mode on.)
