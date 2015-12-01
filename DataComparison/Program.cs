@@ -288,7 +288,15 @@ namespace DataComparison
                 results.Add($"--Error for {friendlyName2}: {ex.Message}");
             }
 
-            //TODO: If table exists in one database but not the other, generate insert scripts for all rows
+            //If table exists in one database but not the other, generate insert scripts for all rows
+            if (DT1 == null && DT2 != null)
+            {
+                DT1 = CreateDataTable(DT2);
+            }
+            else if (DT1 != null && DT2 == null)
+            {
+                DT2 = CreateDataTable(DT1);
+            }
 
             if (DT1 != null && DT2 != null)
             {
@@ -297,6 +305,18 @@ namespace DataComparison
             }
 
             return results.Where(r => !string.IsNullOrWhiteSpace(r)).ToList();
+        }
+
+        private static DataTable CreateDataTable(DataTable dtSource)
+        {
+            DataTable dtDest = new DataTable();
+
+            foreach (DataColumn column in GetColumns(dtSource, true))
+            {
+                dtDest.Columns.Add(column);
+            }
+
+            return dtDest;
         }
 
         private static SqlConnection GetDatabaseConnection(Database db)
