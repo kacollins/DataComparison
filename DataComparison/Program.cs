@@ -32,20 +32,19 @@ namespace DataComparison
             }
         }
 
+        #region Methods
+
         private static bool GetSilentMode(string silentModeFlag)
         {
             bool silentMode;
 
             if (!bool.TryParse(silentModeFlag, out silentMode))
             {
-                const int silentModeOn = 1;
-                silentMode = silentModeFlag == silentModeOn.ToString();
+                silentMode = silentModeFlag == Convert.ToInt32(true).ToString();
             }
 
             return silentMode;
         }
-
-        #region Methods
 
         private static void CompareTables(string tableFileName, string databaseFileName)
         {
@@ -98,7 +97,7 @@ namespace DataComparison
                 Console.WriteLine(errorMessage);
             }
 
-            WriteToFile($"{DateForFileName}_Error", errorMessage, OutputFileExtension.txt);
+            WriteToFile($"{DateForFileName}_Error", OutputFileExtension.txt, errorMessage);
         }
 
         private static TableFileResult GetTablesToCompare(string fileName)
@@ -111,8 +110,8 @@ namespace DataComparison
             List<string> lines = GetFileLines(fileName);
             const char separator = '.';
 
-            List<Table> tablesToCompare = lines.Where(line => line.Split(separator).Length == Enum.GetValues(typeof(TablePart)).Length)
-                                                .Select(validLine => validLine.Split(separator))
+            List<Table> tablesToCompare = lines.Select(line => line.Split(separator))
+                                                .Where(parts => parts.Length == Enum.GetValues(typeof(TablePart)).Length)
                                                 .Select(parts => new Table(parts[(int)TablePart.SchemaName],
                                                                             parts[(int)TablePart.TableName]))
                                                 .ToList();
@@ -231,11 +230,11 @@ namespace DataComparison
                 string fileName = $"{DateForFileName}_{friendlyName1}_{friendlyName2}";
                 string fileContents = AppendLines(results);
 
-                WriteToFile(fileName, fileContents, OutputFileExtension.sql);
+                WriteToFile(fileName, OutputFileExtension.sql, fileContents);
             }
         }
 
-        private static void WriteToFile(string fileName, string fileContents, OutputFileExtension fileExtension)
+        private static void WriteToFile(string fileName, OutputFileExtension fileExtension, string fileContents)
         {
             const char backSlash = '\\';
             string directory = $"{CurrentDirectory}{backSlash}{Folder.Outputs}";
@@ -518,7 +517,7 @@ namespace DataComparison
                                                     string dbName1, string dbName2)
         {
             string column = dataColumn.ColumnName;
-            int ID = int.Parse(DR1.ItemArray[0].ToString());
+            int ID = GetID(DR1);
 
             string value1 = $"'{DR1[dataColumn.ColumnName]}'";
             string value2 = $"'{DR2[dataColumn.ColumnName]}'";
@@ -695,7 +694,7 @@ namespace DataComparison
         private static ScriptForID GetInsertScriptByID(DataRow dr, string dbName, string schema, string table, string friendlyName, string columnList)
         {
             int id = GetID(dr);
-            //TODO: Handle tables without identity specification? would need to add a flag to the input file
+            //TODO: Handle tables without identity specification; add optional flag to the input file
             string identityOn = $"SET IDENTITY_INSERT {schema}.{table} ON";
             string insertInto = $"INSERT INTO {dbName}.{schema}.{table}({columnList})";
             string identityOff = $"SET IDENTITY_INSERT {schema}.{table} OFF";
@@ -716,7 +715,6 @@ namespace DataComparison
 
         #region Properties
 
-        //In LINQPad: private static string CurrentDirectory => Path.GetDirectoryName(Util.CurrentQueryPath);
         private static string CurrentDirectory => Directory.GetCurrentDirectory();  //bin\Debug
 
         private static string DateForFileName => DateTime.Today.ToString("yyyyMMdd");
@@ -916,7 +914,7 @@ namespace DataComparison
         {
             public bool Equals(DataRow DR1, DataRow DR2)
             {
-                return int.Parse(DR1.ItemArray[0].ToString()) == int.Parse(DR2.ItemArray[0].ToString());
+                return GetID(DR1) == GetID(DR2);
             }
 
             public int GetHashCode(DataRow DR)
