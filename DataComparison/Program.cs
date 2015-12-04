@@ -217,7 +217,12 @@ namespace DataComparison
                                                     databasePair.Database1.FriendlyName,
                                                     databasePair.Database2.FriendlyName);
 
-                results.AddRange(result);
+                if (result.Any())
+                {
+                    results.Add("");
+                    results.Add($"{new string('-', 80)}{table.SchemaName}.{table.TableName}");
+                    results.AddRange(result);
+                }
             }
 
             WriteToFile(results, databasePair.Database1.FriendlyName, databasePair.Database2.FriendlyName);
@@ -461,9 +466,9 @@ namespace DataComparison
             List<ScriptForID> results = new List<ScriptForID>();
 
             List<DataRow> missingRows = dataRowsSource.Except(dataRowsDest, new DataRowIDComparer()).ToList();
-            results.AddRange(missingRows.Select(d => GetSelectByID(d, schema, table, friendlyNameSource, friendlyNameDest, idName)));
-            results.AddRange(missingRows.Select(v => GetInsertScriptByID(v, dbNameDest, schema, table, friendlyNameDest, columnListDest)));
-            results.AddRange(missingRows.Select(r => GetDeleteScriptByID(r, dbNameSource, schema, table, friendlyNameSource, idName)));
+            results.AddRange(missingRows.Select(d => GetSelectByID(d, schema, table, idName, friendlyNameSource, friendlyNameDest)));
+            results.AddRange(missingRows.Select(v => GetInsertScriptByID(v, dbNameDest, schema, table, columnListDest, friendlyNameSource, friendlyNameDest)));
+            results.AddRange(missingRows.Select(r => GetDeleteScriptByID(r, dbNameSource, schema, table, idName, friendlyNameSource, friendlyNameDest)));
 
             return results;
         }
@@ -567,10 +572,12 @@ namespace DataComparison
 
             //TODO: Set UserModified and DateModified if those columns exist in the table
 
-            string update = $@"{updateComment}{Environment.NewLine}/*{
-                Environment.NewLine}UPDATE {dbNameDest}.{schema}.{table}{
-                Environment.NewLine}SET {column} = {valueSource}{
-                Environment.NewLine}WHERE {idName} = {ID}{
+            string update = $@"{
+                Environment.NewLine}{updateComment}{
+                Environment.NewLine}/*{
+                Environment.NewLine}{Tab}UPDATE {dbNameDest}.{schema}.{table}{
+                Environment.NewLine}{Tab}SET {column} = {valueSource}{
+                Environment.NewLine}{Tab}WHERE {idName} = {ID}{
                 Environment.NewLine}*/";
 
             return update;
@@ -683,32 +690,55 @@ namespace DataComparison
             return int.Parse(dr.ItemArray[0].ToString());
         }
 
-        private static ScriptForID GetSelectByID(DataRow dr, string schema, string table, string friendlyNameIn, string friendlyNameNotIn, string idName)
+        private static ScriptForID GetSelectByID(DataRow dr, string schema, string table, string idName, 
+                                                string friendlyNameWithRecord, string friendlyNameWithoutRecord)
         {
             int id = GetID(dr);
             string select = $"SELECT * FROM {schema}.{table}";
 
-            return new ScriptForID(id, $"{select} WHERE {idName} = {id} --in {friendlyNameIn} but not in {friendlyNameNotIn}.");
+            return new ScriptForID(id, $"{Environment.NewLine}{select} WHERE {idName} = {id} --in {friendlyNameWithRecord} but not in {friendlyNameWithoutRecord}.");
         }
 
-        private static ScriptForID GetInsertScriptByID(DataRow dr, string dbName, string schema, string table, string friendlyName, string columnList)
+        private static ScriptForID GetInsertScriptByID(DataRow dr, string dbName, string schema, string table, string columnList,
+                                                        string friendlyNameWithRecord, string friendlyNameWithoutRecord)
         {
             int id = GetID(dr);
+
             //TODO: Handle tables without identity specification; add optional flag to the input file
+
+            string insertComment = $"--Execute this script against {friendlyNameWithoutRecord} to insert the record that is in {friendlyNameWithRecord}:";
             string identityOn = $"SET IDENTITY_INSERT {schema}.{table} ON";
             string insertInto = $"INSERT INTO {dbName}.{schema}.{table}({columnList})";
             string identityOff = $"SET IDENTITY_INSERT {schema}.{table} OFF";
-            string values = dr.ItemArray.Select(i => i.ToString())
-                                .Aggregate((current, next) => $"{current}, '{next}'");
+            string values = dr.ItemArray.Select(i => i.ToString()).Aggregate((current, next) => $"{current}, '{next}'");
 
-            return new ScriptForID(id, $"--{identityOn} {insertInto} VALUES({values}) {identityOff} --Insert into {friendlyName}");
+            string insert = $@"{
+                Environment.NewLine}{insertComment}{
+                Environment.NewLine}/*{
+                Environment.NewLine}{Tab}{identityOn}{
+                Environment.NewLine}{Tab}{insertInto}{
+                Environment.NewLine}{Tab}VALUES({values}){
+                Environment.NewLine}{Tab}{identityOff}{
+                Environment.NewLine}*/";
+
+            return new ScriptForID(id, insert);
         }
 
-        private static ScriptForID GetDeleteScriptByID(DataRow dr, string dbName, string schema, string table, string friendlyName, string idName)
+        private static ScriptForID GetDeleteScriptByID(DataRow dr, string dbName, string schema, string table, string idName,
+                                                        string friendlyNameWithRecord, string friendlyNameWithoutRecord)
         {
             int id = GetID(dr);
 
-            return new ScriptForID(id, $"--DELETE FROM {dbName}.{schema}.{table} WHERE {idName} = {id} --Delete from {friendlyName}");
+            string deleteComment = $"--Execute this script against {friendlyNameWithRecord} to delete the record that is not in {friendlyNameWithoutRecord}:";
+
+            string delete = $@"{
+                Environment.NewLine}{deleteComment}{
+                Environment.NewLine}/*{
+                Environment.NewLine}{Tab}DELETE FROM {dbName}.{schema}.{table}{
+                Environment.NewLine}{Tab}WHERE {idName} = {id}{
+                Environment.NewLine}*/";
+
+            return new ScriptForID(id, delete);
         }
 
         #endregion
@@ -718,6 +748,8 @@ namespace DataComparison
         private static string CurrentDirectory => Directory.GetCurrentDirectory();  //bin\Debug
 
         private static string DateForFileName => DateTime.Today.ToString("yyyyMMdd");
+
+        private static string Tab => new string(' ', 4);
 
         #endregion
 
