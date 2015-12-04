@@ -524,8 +524,8 @@ namespace DataComparison
             string column = dataColumn.ColumnName;
             int ID = GetID(DR1);
 
-            string value1 = $"'{DR1[dataColumn.ColumnName]}'";
-            string value2 = $"'{DR2[dataColumn.ColumnName]}'";
+            string value1 = AddQuotes(DR1[dataColumn.ColumnName].ToString());
+            string value2 = AddQuotes(DR2[dataColumn.ColumnName].ToString());
 
             string select = GetSelectForUpdate(schema, table, friendlyName1, friendlyName2, idName, dbName1, dbName2, ID, column, value1, value2);
 
@@ -535,6 +535,13 @@ namespace DataComparison
             return $@"{Environment.NewLine}{select}{
                         Environment.NewLine}{update1}{
                         Environment.NewLine}{update2}";
+        }
+
+        private static string AddQuotes(string input)
+        {
+            input = input.Replace("'", "''"); //escape single quotes
+            input = $"'{input}'"; //surround with single quotes
+            return input;
         }
 
         private static string GetSelectForUpdate(string schema, string table, string friendlyName1, string friendlyName2,
@@ -690,7 +697,7 @@ namespace DataComparison
             return int.Parse(dr.ItemArray[0].ToString());
         }
 
-        private static ScriptForID GetSelectByID(DataRow dr, string schema, string table, string idName, 
+        private static ScriptForID GetSelectByID(DataRow dr, string schema, string table, string idName,
                                                 string friendlyNameWithRecord, string friendlyNameWithoutRecord)
         {
             int id = GetID(dr);
@@ -710,7 +717,7 @@ namespace DataComparison
             string identityOn = $"SET IDENTITY_INSERT {schema}.{table} ON";
             string insertInto = $"INSERT INTO {dbName}.{schema}.{table}({columnList})";
             string identityOff = $"SET IDENTITY_INSERT {schema}.{table} OFF";
-            string values = dr.ItemArray.Select(i => i.ToString()).Aggregate((current, next) => $"{current}, '{next}'");
+            string values = dr.ItemArray.Select(i => i.ToString()).Aggregate((current, next) => $"{current}, {AddQuotes(next)}");
 
             string insert = $@"{
                 Environment.NewLine}{insertComment}{
@@ -763,9 +770,9 @@ namespace DataComparison
 
             public Database(string friendlyName, string serverName, string databaseName)
             {
-                FriendlyName = friendlyName;
-                ServerName = serverName;
-                DatabaseName = databaseName;
+                FriendlyName = friendlyName.Trim();
+                ServerName = serverName.Trim();
+                DatabaseName = databaseName.Trim();
             }
         }
 
@@ -788,8 +795,8 @@ namespace DataComparison
 
             public Table(string schemaName, string tableName)
             {
-                SchemaName = schemaName;
-                TableName = tableName;
+                SchemaName = schemaName.Trim();
+                TableName = tableName.Trim();
             }
         }
 
