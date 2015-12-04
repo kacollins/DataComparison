@@ -312,7 +312,7 @@ namespace DataComparison
 
             foreach (DataColumn column in GetColumns(dtSource, true))
             {
-                dtDest.Columns.Add(column);
+                dtDest.Columns.Add(column.ColumnName);
             }
 
             return dtDest;
