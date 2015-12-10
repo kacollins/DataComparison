@@ -159,6 +159,8 @@ namespace DataComparison
 
             List<string> errorMessages = GetFileErrors(lines, separator, Enum.GetValues(typeof(DatabasePairPart)).Length, "database pair format");
 
+            //TODO: Make sure no database pair has the same server name and same table name
+
             if (errorMessages.Any())
             {
                 Console.WriteLine($"Error: Invalid database pair format in {InputFile.DatabasePairs} file.");
@@ -293,6 +295,7 @@ namespace DataComparison
             }
 
             //If table exists in one database but not the other, generate insert scripts for all rows
+            //TODO: In this case, don't include delete scripts, and make it clearer that the table only exists in one database
             if (DT1 == null && DT2 != null)
             {
                 DT1 = CreateDataTable(DT2);
@@ -315,7 +318,7 @@ namespace DataComparison
         {
             DataTable dtDest = new DataTable();
 
-            foreach (DataColumn column in GetColumns(dtSource, true))
+            foreach (DataColumn column in GetColumns(dtSource, false))
             {
                 dtDest.Columns.Add(column.ColumnName);
             }
@@ -425,6 +428,8 @@ namespace DataComparison
             {
                 dt2.Columns.Remove(dc);
             }
+
+            //TODO: Format results differently for same server vs different servers?
 
             List<string> differencesInIDs = GetDifferencesInIDs(schemaName, tableName, dr1, dr2, friendlyName1, friendlyName2, dc1All, dc2All, dbName1, dbName2);
 
@@ -577,7 +582,8 @@ namespace DataComparison
         {
             string updateComment = $"--Execute this script against {friendlyNameDest} to update it to match {friendlyNameSource}:";
 
-            //TODO: Set UserModified and DateModified if those columns exist in the table
+            //TODO: Set UserModified to hard-coded value and DateModified to GETDATE() if those columns exist in the table
+            //TODO: Exclude computed columns
 
             string update = $@"{
                 Environment.NewLine}{updateComment}{
@@ -712,6 +718,8 @@ namespace DataComparison
             int id = GetID(dr);
 
             //TODO: Handle tables without identity specification; add optional flag to the input file
+            //TODO: Set UserCreated to hard-coded value and DateCreated to GETDATE() if those columns exist in the table
+            //TODO: Exclude computed columns
 
             string insertComment = $"--Execute this script against {friendlyNameWithoutRecord} to insert the record that is in {friendlyNameWithRecord}:";
             string identityOn = $"SET IDENTITY_INSERT {schema}.{table} ON";
